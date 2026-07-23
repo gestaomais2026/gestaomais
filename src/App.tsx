@@ -10,7 +10,7 @@ import Consultations from '@/pages/Consultations';
 import Plans from '@/pages/Plans';
 import FollowUps from '@/pages/FollowUps';
 import Doctors from '@/pages/Doctors';
-import Reports from '@/pages/Reports';
+import Financeiro from '@/pages/Financeiro';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
@@ -49,7 +49,7 @@ function AppContent() {
       {page === 'plans' && <Plans />}
       {page === 'followups' && <FollowUps />}
       {page === 'doctors' && <Doctors />}
-      {page === 'reports' && <Reports />}
+      {page === 'financeiro' && <Financeiro />}
     </Layout>
   );
 }

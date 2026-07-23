@@ -17,8 +17,8 @@ export default function AuthShell({ children }: Props) {
         <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/60 p-8 sm:p-10">
           {/* Logo + brand */}
           <div className="flex flex-col items-center mb-8">
-            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#F5F2E8] to-[#E0D9C3] flex items-center justify-center shadow-lg mb-4">
-              <WPLogo size={64} color="#4F4E3A" />
+            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#F5F2E8] to-[#E0D9C3] flex items-center justify-center shadow-lg mb-4 overflow-hidden">
+              <WPLogo size={64} />
             </div>
             <h1 className="text-2xl font-serif font-bold text-[#4F4E3A] tracking-tight">
               Wanessa Pinheiro

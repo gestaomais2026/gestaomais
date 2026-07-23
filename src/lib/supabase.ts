@@ -117,3 +117,22 @@ export type FollowUp = {
   updated_at: string;
   patient?: Patient;
 };
+
+export type Payment = {
+  id: string;
+  user_id: string;
+  patient_id: string;
+  appointment_id: string | null;
+  consultation_id: string | null;
+  service_date: string;
+  description: string | null;
+  amount: number;
+  payment_method: 'pix' | 'dinheiro' | 'cartão débito' | 'cartão crédito' | 'convênio' | 'outro' | null;
+  payment_status: 'pending' | 'paid' | 'cancelled' | 'overdue';
+  insurance_plan: string | null;
+  notes: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+  patient?: Patient;
+};

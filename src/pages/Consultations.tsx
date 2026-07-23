@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase, Consultation, Patient } from '@/lib/supabase';
-import { Plus, Edit2, Trash2, X, ClipboardList, TrendingDown, Activity } from 'lucide-react';
+import { supabase, Consultation, Patient, Appointment } from '@/lib/supabase';
+import { Plus, Edit2, Trash2, X, ClipboardList, Activity, Clock } from 'lucide-react';
 
 const emptyForm = {
   patient_id: '',
@@ -20,6 +20,7 @@ const emptyForm = {
 export default function Consultations() {
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Consultation | null>(null);
@@ -29,13 +30,28 @@ export default function Consultations() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('consultations')
-      .select('*, patient:patients(*)')
-      .order('consultation_date', { ascending: false });
-    setConsultations((data as Consultation[]) || []);
-    const { data: pData } = await supabase.from('patients').select('*').order('name');
-    setPatients((pData as Patient[]) || []);
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).toISOString();
+
+    const [consResult, patResult, apptResult] = await Promise.all([
+      supabase
+        .from('consultations')
+        .select('*, patient:patients(*)')
+        .order('consultation_date', { ascending: false }),
+      supabase.from('patients').select('*').order('name'),
+      supabase
+        .from('appointments')
+        .select('*, patient:patients(*)')
+        .gte('scheduled_at', startOfDay)
+        .lt('scheduled_at', endOfDay)
+        .in('status', ['scheduled', 'confirmed'])
+        .order('scheduled_at', { ascending: true }),
+    ]);
+
+    setConsultations((consResult.data as Consultation[]) || []);
+    setPatients((patResult.data as Patient[]) || []);
+    setTodayAppointments((apptResult.data as Appointment[]) || []);
     setLoading(false);
   }, []);
 
@@ -48,6 +64,16 @@ export default function Consultations() {
   function openNew() {
     setEditing(null);
     setForm({ ...emptyForm, consultation_date: new Date().toISOString().slice(0, 10) });
+    setModalOpen(true);
+  }
+
+  function openFromAppointment(apt: Appointment) {
+    setEditing(null);
+    setForm({
+      ...emptyForm,
+      patient_id: apt.patient_id,
+      consultation_date: new Date().toISOString().slice(0, 10),
+    });
     setModalOpen(true);
   }
 
@@ -104,8 +130,48 @@ export default function Consultations() {
     load();
   }
 
+  const typeLabels: Record<string, string> = {
+    first: 'Primeira consulta', return: 'Retorno', emergency: 'Emergência', online: 'Online',
+  };
+
   return (
     <div className="space-y-6">
+      {/* Today's appointments */}
+      {todayAppointments.length > 0 && (
+        <div className="bg-gradient-to-r from-[#4F4E3A] to-[#6B6A50] rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Clock size={18} className="text-[#C4A77D]" />
+            <h3 className="text-white font-serif font-bold">Agendamentos de Hoje</h3>
+            <span className="ml-auto text-xs text-[#C4A77D] bg-white/10 px-2 py-0.5 rounded-full">
+              Clique para abrir consulta
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {todayAppointments.map((apt) => (
+              <button
+                key={apt.id}
+                onClick={() => openFromAppointment(apt)}
+                className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-4 text-left transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#C4A77D] flex items-center justify-center text-[#4F4E3A] font-bold text-sm flex-shrink-0">
+                    {apt.patient?.name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-white font-medium truncate">{apt.patient?.name}</p>
+                    <p className="text-[#C4A77D] text-xs">
+                      {new Date(apt.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      {' · '}{typeLabels[apt.type] || apt.type}
+                    </p>
+                  </div>
+                  <Plus size={16} className="text-white/50 group-hover:text-white ml-auto flex-shrink-0 transition-colors" />
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-3 justify-between">
         <select value={selectedPatient} onChange={(e) => setSelectedPatient(e.target.value)}
           className="px-4 py-3 rounded-xl border border-[#D5CFBE] bg-white focus:border-[#8C8B6E] outline-none text-[#4F4E3A] text-sm max-w-xs">
@@ -158,10 +224,10 @@ export default function Consultations() {
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
                 <Metric label="Peso" value={c.weight_kg} unit="kg" />
                 <Metric label="% Gordura" value={c.body_fat_pct} unit="%" />
-                <Metric label="Massa" value={c.muscle_mass_kg} unit="kg" />
+                <Metric label="Massa Muscular" value={c.muscle_mass_kg} unit="kg" />
                 <Metric label="Cintura" value={c.waist_cm} unit="cm" />
                 <Metric label="Quadril" value={c.hip_cm} unit="cm" />
-                <Metric label="PA" value={c.blood_pressure} />
+                <Metric label="P.A." value={c.blood_pressure} />
                 <Metric label="Glicose" value={c.glucose} unit="mg/dL" />
               </div>
 
@@ -224,7 +290,7 @@ export default function Consultations() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <NumField label="Peso (kg)" value={form.weight_kg} onChange={(v) => setForm({ ...form, weight_kg: v })} step="0.01" />
                 <NumField label="% Gordura" value={form.body_fat_pct} onChange={(v) => setForm({ ...form, body_fat_pct: v })} step="0.1" />
-                <NumField label="Massa (kg)" value={form.muscle_mass_kg} onChange={(v) => setForm({ ...form, muscle_mass_kg: v })} step="0.01" />
+                <NumField label="Massa Muscular (kg)" value={form.muscle_mass_kg} onChange={(v) => setForm({ ...form, muscle_mass_kg: v })} step="0.01" />
                 <NumField label="Cintura (cm)" value={form.waist_cm} onChange={(v) => setForm({ ...form, waist_cm: v })} step="0.1" />
                 <NumField label="Quadril (cm)" value={form.hip_cm} onChange={(v) => setForm({ ...form, hip_cm: v })} step="0.1" />
                 <NumField label="Glicose (mg/dL)" value={form.glucose} onChange={(v) => setForm({ ...form, glucose: v })} step="0.1" />
@@ -274,7 +340,7 @@ const inputClass = "w-full px-4 py-2.5 rounded-xl border border-[#D5CFBE] bg-[#F
 function Metric({ label, value, unit }: { label: string; value: string | number | null; unit?: string }) {
   return (
     <div className="bg-[#F5F2E8] rounded-lg px-3 py-2 text-center">
-      <p className="text-xs text-[#8C8B6E] mb-0.5">{label}</p>
+      <p className="text-xs text-[#8C8B6E] mb-0.5 leading-tight">{label}</p>
       <p className="text-sm font-bold text-[#4F4E3A]">
         {value !== null && value !== '' && value !== undefined ? `${value}${unit ? ' ' + unit : ''}` : '-'}
       </p>

@@ -3,10 +3,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import WPLogo from '@/components/WPLogo';
 import {
   LayoutDashboard, Users, Calendar, ClipboardList, Activity,
-  Stethoscope, FileText, LogOut, Menu, X
+  Stethoscope, DollarSign, LogOut, Menu, X
 } from 'lucide-react';
 
-export type Page = 'dashboard' | 'patients' | 'appointments' | 'consultations' | 'plans' | 'followups' | 'doctors' | 'reports';
+export type Page = 'dashboard' | 'patients' | 'appointments' | 'consultations' | 'plans' | 'followups' | 'doctors' | 'financeiro';
 
 type NavItem = { id: Page; label: string; icon: React.ElementType };
 
@@ -18,7 +18,7 @@ const navItems: NavItem[] = [
   { id: 'plans', label: 'Planos Alimentares', icon: Activity },
   { id: 'followups', label: 'Acompanhamento', icon: Activity },
   { id: 'doctors', label: 'Médicos Referentes', icon: Stethoscope },
-  { id: 'reports', label: 'Prestação de Contas', icon: FileText },
+  { id: 'financeiro', label: 'Contas a Receber', icon: DollarSign },
 ];
 
 export default function Layout({ currentPage, onNavigate, children }: {
@@ -41,8 +41,8 @@ export default function Layout({ currentPage, onNavigate, children }: {
       `}>
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-[#F5F2E8] flex items-center justify-center shadow-md">
-              <WPLogo size={32} color="#4F4E3A" />
+            <div className="w-12 h-12 rounded-xl bg-[#F5F2E8] flex items-center justify-center shadow-md overflow-hidden">
+              <WPLogo size={32} />
             </div>
             <div>
               <h2 className="text-white font-serif font-bold text-sm leading-tight">Wanessa Pinheiro</h2>
