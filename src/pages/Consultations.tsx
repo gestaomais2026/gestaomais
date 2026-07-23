@@ -1,11 +1,12 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase, Patient, Doctor } from '@/lib/supabase';
 import {
   Plus, Edit2, Trash2, X, ClipboardList, Stethoscope, Clock, FileDown, Pill,
+  ChevronDown, ChevronRight, History,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 
-// npm install jspdf (jspdf-autotable não é necessário aqui)
+// npm install jspdf
 
 // ---------- Tipos locais (ver migration_consultations_prontuario.sql) ----------
 
@@ -58,6 +59,10 @@ const emptyForm = {
   next_consultation_date: '',
 };
 
+function fmtDate(d: string) {
+  return new Date(d).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
 export default function Consultations() {
   const [consultations, setConsultations] = useState<ConsultationRow[]>([]);
   const [patients, setPatients] = useState<(Patient & { doctor?: Doctor | null })[]>([]);
@@ -67,6 +72,7 @@ export default function Consultations() {
   const [editing, setEditing] = useState<ConsultationRow | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [showHistoryInForm, setShowHistoryInForm] = useState(false);
 
   const [selectedPatient, setSelectedPatient] = useState<string>('all');
   const [doctorFilter, setDoctorFilter] = useState<string>('all');
@@ -74,6 +80,10 @@ export default function Consultations() {
   const [dateTo, setDateTo] = useState('');
 
   const [activePlan, setActivePlan] = useState<TreatmentPlanLite | null>(null);
+  const [detailRecord, setDetailRecord] = useState<ConsultationRow | null>(null);
+
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+  const monthsInitialized = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,7 +114,7 @@ export default function Consultations() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Plano de acompanhamento do paciente selecionado (contexto do prontuário)
+  // Plano de acompanhamento do paciente selecionado (contexto no topo da lista)
   useEffect(() => {
     let active = true;
     async function fetchPlan() {
@@ -138,6 +148,63 @@ export default function Consultations() {
     });
   }, [consultations, selectedPatient, doctorFilter, dateFrom, dateTo]);
 
+  // Contagem total de consultas por paciente (indica "já tem histórico")
+  const patientHistoryCount = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of consultations) map.set(c.patient_id, (map.get(c.patient_id) || 0) + 1);
+    return map;
+  }, [consultations]);
+
+  // Agrupamento por mês — cada mês com sua própria seção
+  const monthGroups = useMemo(() => {
+    const map = new Map<string, ConsultationRow[]>();
+    for (const c of filtered) {
+      const key = c.consultation_date.slice(0, 7); // YYYY-MM
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(c);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([key, items]) => ({
+        key,
+        label: new Date(`${key}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+        items: items.slice().sort((a, b) => b.consultation_date.localeCompare(a.consultation_date)),
+      }));
+  }, [filtered]);
+
+  useEffect(() => {
+    if (!monthsInitialized.current && monthGroups.length > 0) {
+      setExpandedMonths(new Set([monthGroups[0].key]));
+      monthsInitialized.current = true;
+    }
+  }, [monthGroups]);
+
+  function toggleMonth(key: string) {
+    setExpandedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  // Histórico completo do paciente do form aberto — reforça continuidade ao criar/editar
+  const previousForPatient = useMemo(() => {
+    if (!form.patient_id) return [];
+    return consultations
+      .filter((c) => c.patient_id === form.patient_id && c.id !== editing?.id)
+      .slice()
+      .sort((a, b) => b.consultation_date.localeCompare(a.consultation_date));
+  }, [consultations, form.patient_id, editing]);
+
+  // Histórico completo do paciente do registro em detalhe (ordem cronológica crescente)
+  const historyForDetail = useMemo(() => {
+    if (!detailRecord) return [];
+    return consultations
+      .filter((c) => c.patient_id === detailRecord.patient_id)
+      .slice()
+      .sort((a, b) => a.consultation_date.localeCompare(b.consultation_date));
+  }, [consultations, detailRecord]);
+
   async function prefillFromLastConsultation(patientId: string) {
     const { data } = await supabase
       .from('consultations')
@@ -151,12 +218,14 @@ export default function Consultations() {
 
   function openNew() {
     setEditing(null);
+    setShowHistoryInForm(false);
     setForm({ ...emptyForm, consultation_date: new Date().toISOString().slice(0, 10) });
     setModalOpen(true);
   }
 
   async function openFromAppointment(apt: AppointmentLite) {
     setEditing(null);
+    setShowHistoryInForm(false);
     const prev = await prefillFromLastConsultation(apt.patient_id);
     setForm({
       ...emptyForm,
@@ -180,7 +249,9 @@ export default function Consultations() {
   }
 
   function openEdit(c: ConsultationRow) {
+    setDetailRecord(null);
     setEditing(c);
+    setShowHistoryInForm(false);
     setForm({
       patient_id: c.patient_id,
       appointment_id: c.appointment_id,
@@ -222,11 +293,8 @@ export default function Consultations() {
   async function remove(id: string) {
     if (!confirm('Excluir esta consulta?')) return;
     await supabase.from('consultations').delete().eq('id', id);
+    setDetailRecord(null);
     load();
-  }
-
-  function fmtDate(d: string) {
-    return new Date(d).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
   function exportPDF() {
@@ -277,7 +345,6 @@ export default function Consultations() {
       y += split.length * 4.2 + 2;
     }
 
-    // Agrupa por médico > paciente
     const byDoctor = new Map<string, Map<string, ConsultationRow[]>>();
     for (const c of filtered) {
       const doctorName = c.patient?.doctor?.name ?? 'Particular';
@@ -429,99 +496,95 @@ export default function Consultations() {
         </div>
       )}
 
+      {/* Lista mensal em accordion */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin w-10 h-10 border-3 border-[#4F4E3A] border-t-transparent rounded-full" />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : monthGroups.length === 0 ? (
         <div className="bg-white rounded-2xl border border-[#E0D9C3] p-12 text-center">
           <ClipboardList className="mx-auto mb-3 text-[#8C8B6E] opacity-40" size={40} />
           <p className="text-[#8C8B6E] text-lg">Nenhuma consulta registrada</p>
         </div>
       ) : (
         <div className="space-y-4">
-          {filtered.map((c) => (
-            <div key={c.id} className="bg-white rounded-2xl shadow-sm border border-[#E0D9C3] p-5 group hover:shadow-md transition-all">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#C4A77D] to-[#8C8B6E] flex items-center justify-center text-white font-bold">
-                    {c.patient?.name?.charAt(0).toUpperCase()}
+          {monthGroups.map((group) => {
+            const expanded = expandedMonths.has(group.key);
+            return (
+              <div key={group.key} className="bg-white rounded-2xl border border-[#E0D9C3] overflow-hidden">
+                <button
+                  onClick={() => toggleMonth(group.key)}
+                  className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#F5F2E8] transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-serif font-bold text-[#4F4E3A] capitalize">{group.label}</h3>
+                    <span className="text-xs text-[#8C8B6E] bg-[#F5F2E8] px-2 py-0.5 rounded-full">
+                      {group.items.length} consulta{group.items.length !== 1 ? 's' : ''}
+                    </span>
                   </div>
-                  <div>
-                    <h3 className="font-serif font-bold text-[#4F4E3A]">{c.patient?.name}</h3>
-                    <p className="text-xs text-[#8C8B6E] flex items-center gap-1 flex-wrap">
-                      <span>{fmtDate(c.consultation_date)}</span>
-                      {c.appointment?.session_number && <span>· Sessão {c.appointment.session_number}</span>}
-                      {c.patient?.doctor?.name && (
-                        <span className="inline-flex items-center gap-1 text-[#6B8E5A]">
-                          · <Stethoscope size={11} /> {c.patient.doctor.name}
-                        </span>
-                      )}
-                    </p>
+                  {expanded ? <ChevronDown size={18} className="text-[#8C8B6E]" /> : <ChevronRight size={18} className="text-[#8C8B6E]" />}
+                </button>
+
+                {expanded && (
+                  <div className="border-t border-[#E0D9C3] divide-y divide-[#E0D9C3]">
+                    {group.items.map((c) => {
+                      const histCount = patientHistoryCount.get(c.patient_id) ?? 1;
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => setDetailRecord(c)}
+                          className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-[#F5F2E8]/60 transition-colors text-left group"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#C4A77D] to-[#8C8B6E] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                            {c.patient?.name?.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-[#4F4E3A] truncate">{c.patient?.name}</p>
+                            <p className="text-xs text-[#8C8B6E] flex items-center gap-1.5 flex-wrap mt-0.5">
+                              <span>{new Date(c.consultation_date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span>
+                              {c.appointment?.session_number && <span>· Sessão {c.appointment.session_number}</span>}
+                              {c.patient?.doctor?.name && (
+                                <span className="inline-flex items-center gap-1 text-[#6B8E5A]">
+                                  <Stethoscope size={11} /> {c.patient.doctor.name}
+                                </span>
+                              )}
+                              {histCount > 1 && (
+                                <span className="inline-flex items-center gap-1 text-[#8C8B6E]">
+                                  <History size={11} /> {histCount} no histórico
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          {c.medication && (
+                            <span className="hidden sm:inline-flex items-center gap-1 text-xs bg-[#F5F2E8] text-[#4F4E3A] px-2.5 py-1 rounded-lg flex-shrink-0">
+                              <Pill size={11} /> {c.medication}
+                            </span>
+                          )}
+                          <ChevronRight size={16} className="text-[#8C8B6E] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                        </button>
+                      );
+                    })}
                   </div>
-                </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => openEdit(c)}
-                    className="p-2 rounded-lg text-[#8C8B6E] hover:bg-[#F5F2E8] hover:text-[#4F4E3A] transition-colors">
-                    <Edit2 size={16} />
-                  </button>
-                  <button onClick={() => remove(c.id)}
-                    className="p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
+                )}
               </div>
-
-              {(c.medication || c.clinical_conditions) && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {c.medication && (
-                    <span className="inline-flex items-center gap-1.5 text-xs bg-[#F5F2E8] text-[#4F4E3A] px-3 py-1.5 rounded-lg">
-                      <Pill size={12} /> {c.medication}
-                    </span>
-                  )}
-                  {c.clinical_conditions && (
-                    <span className="text-xs bg-[#F5F2E8] text-[#4F4E3A] px-3 py-1.5 rounded-lg">
-                      {c.clinical_conditions}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {(c.notes || c.psych_notes || c.recommendations) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-[#E0D9C3]">
-                  {c.notes && (
-                    <div>
-                      <p className="text-xs font-medium text-[#8C8B6E] uppercase mb-1">Obs. Nutricionista</p>
-                      <p className="text-sm text-[#4F4E3A]">{c.notes}</p>
-                    </div>
-                  )}
-                  {c.psych_notes && (
-                    <div>
-                      <p className="text-xs font-medium text-[#8C8B6E] uppercase mb-1">Obs. Psicóloga</p>
-                      <p className="text-sm text-[#4F4E3A]">{c.psych_notes}</p>
-                    </div>
-                  )}
-                  {c.recommendations && (
-                    <div className="sm:col-span-2">
-                      <p className="text-xs font-medium text-[#8C8B6E] uppercase mb-1">Recomendações</p>
-                      <p className="text-sm text-[#4F4E3A]">{c.recommendations}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {c.next_consultation_date && (
-                <div className="mt-3 flex items-center gap-2 text-sm text-[#C4A77D] bg-[#F5F2E8] rounded-lg px-3 py-2">
-                  <Clock size={16} />
-                  Próxima consulta: {new Date(c.next_consultation_date).toLocaleDateString('pt-BR')}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* Modal */}
+      {/* Modal de detalhe (clique na lista) */}
+      {detailRecord && (
+        <ConsultationDetailModal
+          record={detailRecord}
+          history={historyForDetail}
+          onClose={() => setDetailRecord(null)}
+          onEdit={openEdit}
+          onDelete={remove}
+          onJump={setDetailRecord}
+        />
+      )}
+
+      {/* Modal de criação/edição */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -550,6 +613,38 @@ export default function Consultations() {
                     onChange={(e) => setForm({ ...form, consultation_date: e.target.value })} className={inputClass} />
                 </div>
               </div>
+
+              {/* Histórico anterior do paciente — visão unificada, evita registro "solto" */}
+              {form.patient_id && previousForPatient.length > 0 && (
+                <div className="rounded-xl border border-[#E0D9C3] bg-[#F5F2E8] px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowHistoryInForm((v) => !v)}
+                    className="w-full flex items-center justify-between text-sm font-medium text-[#4F4E3A]"
+                  >
+                    <span className="flex items-center gap-2">
+                      <History size={14} className="text-[#6B8E5A]" />
+                      Este paciente já tem histórico ({previousForPatient.length} consulta{previousForPatient.length !== 1 ? 's' : ''})
+                    </span>
+                    {showHistoryInForm ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </button>
+                  {showHistoryInForm && (
+                    <div className="mt-3 space-y-2 max-h-40 overflow-y-auto">
+                      {previousForPatient.slice(0, 6).map((h) => (
+                        <div key={h.id} className="text-xs bg-white rounded-lg px-3 py-2">
+                          <p className="font-medium text-[#4F4E3A]">
+                            {fmtDate(h.consultation_date)}
+                            {h.appointment?.session_number ? ` · Sessão ${h.appointment.session_number}` : ''}
+                          </p>
+                          {(h.notes || h.clinical_conditions) && (
+                            <p className="text-[#8C8B6E] mt-0.5 truncate">{h.notes || h.clinical_conditions}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -605,3 +700,117 @@ export default function Consultations() {
 }
 
 const inputClass = "w-full px-4 py-2.5 rounded-xl border border-[#D5CFBE] bg-[#FDFCF7] focus:border-[#8C8B6E] focus:ring-2 focus:ring-[#8C8B6E]/20 outline-none transition-all text-[#4F4E3A] text-sm";
+
+// ---------- Modal de Detalhe ----------
+
+function ConsultationDetailModal({
+  record, history, onClose, onEdit, onDelete, onJump,
+}: {
+  record: ConsultationRow;
+  history: ConsultationRow[];
+  onClose: () => void;
+  onEdit: (c: ConsultationRow) => void;
+  onDelete: (id: string) => void;
+  onJump: (c: ConsultationRow) => void;
+}) {
+  const hasAnyNote = record.medication || record.clinical_conditions || record.notes || record.psych_notes || record.recommendations;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-[#E0D9C3] sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#C4A77D] to-[#8C8B6E] flex items-center justify-center text-white font-bold flex-shrink-0">
+              {record.patient?.name?.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-serif font-bold text-[#4F4E3A] truncate">{record.patient?.name}</h2>
+              <p className="text-xs text-[#8C8B6E] truncate">
+                {fmtDate(record.consultation_date)}
+                {record.appointment?.session_number ? ` · Sessão ${record.appointment.session_number}` : ''}
+                {record.patient?.doctor?.name ? ` · ${record.patient.doctor.name}` : ''}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-[#8C8B6E] hover:text-[#4F4E3A] flex-shrink-0">
+            <X size={22} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {record.medication && <DetailField icon={Pill} label="Medicamento em uso" value={record.medication} />}
+          {record.clinical_conditions && <DetailField label="Condições clínicas" value={record.clinical_conditions} />}
+          {record.notes && <DetailField label="Observações (Nutricionista)" value={record.notes} />}
+          {record.psych_notes && <DetailField label="Observações (Psicóloga)" value={record.psych_notes} />}
+          {record.recommendations && <DetailField label="Recomendações" value={record.recommendations} />}
+          {record.next_consultation_date && (
+            <div className="flex items-center gap-2 text-sm text-[#C4A77D] bg-[#F5F2E8] rounded-lg px-3 py-2">
+              <Clock size={16} /> Próxima consulta: {fmtDate(record.next_consultation_date)}
+            </div>
+          )}
+          {!hasAnyNote && (
+            <p className="text-sm text-[#8C8B6E] italic">Nenhuma anotação registrada nesta sessão.</p>
+          )}
+
+          {history.length > 1 && (
+            <div className="pt-4 border-t border-[#E0D9C3]">
+              <div className="flex items-center gap-2 mb-3">
+                <History size={16} className="text-[#6B8E5A]" />
+                <h3 className="text-sm font-semibold text-[#4F4E3A]">
+                  Evolução do paciente ({history.length} consultas)
+                </h3>
+              </div>
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {history.map((h) => (
+                  <button
+                    key={h.id}
+                    onClick={() => onJump(h)}
+                    className={`w-full text-left rounded-lg px-3 py-2 text-sm transition-colors ${
+                      h.id === record.id ? 'bg-[#4F4E3A] text-white' : 'bg-[#F5F2E8] text-[#4F4E3A] hover:bg-[#EDE8D9]'
+                    }`}
+                  >
+                    <span className="font-medium">
+                      {fmtDate(h.consultation_date)}
+                      {h.appointment?.session_number ? ` · Sessão ${h.appointment.session_number}` : ''}
+                    </span>
+                    {(h.notes || h.clinical_conditions) && (
+                      <p className={`text-xs mt-0.5 truncate ${h.id === record.id ? 'text-white/80' : 'text-[#8C8B6E]'}`}>
+                        {h.notes || h.clinical_conditions}
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 p-6 pt-0">
+          <button onClick={() => onDelete(record.id)}
+            className="py-3 px-4 rounded-xl bg-red-50 text-red-600 font-medium hover:bg-red-100 transition-colors">
+            <Trash2 size={18} />
+          </button>
+          <button onClick={onClose}
+            className="flex-1 py-3 rounded-xl bg-[#F5F2E8] text-[#4F4E3A] font-medium hover:bg-[#EDE8D9] transition-colors">
+            Fechar
+          </button>
+          <button onClick={() => onEdit(record)}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-[#4F4E3A] text-white font-medium hover:bg-[#3D3C2A] transition-colors">
+            <Edit2 size={16} /> Editar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailField({ icon: Icon, label, value }: { icon?: React.ElementType; label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-[#8C8B6E] uppercase mb-1 flex items-center gap-1">
+        {Icon && <Icon size={12} />} {label}
+      </p>
+      <p className="text-sm text-[#4F4E3A] whitespace-pre-wrap">{value}</p>
+    </div>
+  );
+}
