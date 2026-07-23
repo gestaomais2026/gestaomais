@@ -375,102 +375,108 @@ export default function PrestacaoContas() {
             const statusCfg = invoice ? STATUS_CONFIG[invoice.status] : STATUS_CONFIG.pendente;
             const isUploading = g.doctor ? uploadingDoctorId === g.doctor.id : false;
             const expanded = expandedDoctors.has(g.name);
+            const patientCount = new Set(g.items.map((i) => i.patient_id)).size;
 
             return (
               <div key={g.name} className="bg-white rounded-2xl shadow-sm border border-[#E0D9C3] overflow-hidden">
-                <div
+                {/* Cabeçalho enxuto: só nome, nº de pacientes e status da NF */}
+                <button
                   onClick={() => toggleDoctor(g.name)}
-                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 bg-[#F5F2E8] cursor-pointer hover:bg-[#EDE8D9] transition-colors"
+                  className="w-full flex items-center gap-3 px-5 py-4 bg-[#F5F2E8] hover:bg-[#EDE8D9] transition-colors text-left"
                 >
-                  <div className="flex items-center gap-2">
-                    <ChevronDown
-                      size={16}
-                      className={`text-[#8C8B6E] transition-transform ${expanded ? 'rotate-0' : '-rotate-90'}`}
-                    />
-                    <Stethoscope size={16} className="text-[#6B8E5A]" />
-                    <h3 className="font-serif font-bold text-[#4F4E3A]">{g.name}</h3>
-                    <span className="text-xs text-[#8C8B6E]">
-                      ({g.items.length} lançamento{g.items.length !== 1 ? 's' : ''})
+                  <ChevronDown
+                    size={16}
+                    className={`text-[#8C8B6E] transition-transform flex-shrink-0 ${expanded ? 'rotate-0' : '-rotate-90'}`}
+                  />
+                  <Stethoscope size={16} className="text-[#6B8E5A] flex-shrink-0" />
+                  <h3 className="font-serif font-bold text-[#4F4E3A]">{g.name}</h3>
+                  <span className="text-xs text-[#8C8B6E]">
+                    {patientCount} paciente{patientCount !== 1 ? 's' : ''}
+                  </span>
+                  {g.doctor && (
+                    <span className={`ml-auto px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${statusCfg.bg} ${statusCfg.color}`}>
+                      {statusCfg.label}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                    <span className="font-bold text-[#4F4E3A]">{fmt(g.total)}</span>
-
-                    {g.doctor && (
-                      <>
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusCfg.bg} ${statusCfg.color}`}>
-                          {statusCfg.label}
-                        </span>
-
-                        {invoice?.file_path ? (
-                          <button
-                            onClick={() => openInvoiceFile(invoice.file_path!)}
-                            className="flex items-center gap-1.5 text-xs text-[#4F4E3A] bg-white border border-[#D5CFBE] px-3 py-1.5 rounded-lg hover:bg-[#F5F2E8] transition-colors"
-                            title={invoice.file_name || ''}
-                          >
-                            <ExternalLink size={13} />
-                            <span className="max-w-32 truncate">{invoice.file_name}</span>
-                          </button>
-                        ) : null}
-
-                        <input
-                          ref={(el) => { fileInputRefs.current[g.doctor!.id] = el; }}
-                          type="file"
-                          accept=".pdf,.xml,.png,.jpg,.jpeg"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file && g.doctor) handleUploadInvoice(g.doctor.id, g.total, file);
-                            e.target.value = '';
-                          }}
-                        />
-                        <button
-                          onClick={() => fileInputRefs.current[g.doctor!.id]?.click()}
-                          disabled={isUploading}
-                          className="flex items-center gap-1.5 text-xs bg-[#4F4E3A] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D3C2A] transition-colors disabled:opacity-50"
-                        >
-                          <Upload size={13} />
-                          {isUploading ? 'Enviando...' : invoice?.file_path ? 'Substituir NF' : 'Enviar NF'}
-                        </button>
-
-                        {invoice && (
-                          <div className="flex items-center gap-1">
-                            {invoice.status === 'emitida' && (
-                              <button
-                                onClick={() => updateInvoiceStatus(invoice, 'enviada')}
-                                title="Marcar como enviada ao médico"
-                                className="p-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors"
-                              >
-                                <Send size={14} />
-                              </button>
-                            )}
-                            {(invoice.status === 'emitida' || invoice.status === 'enviada') && (
-                              <button
-                                onClick={() => updateInvoiceStatus(invoice, 'paga')}
-                                title="Marcar como paga"
-                                className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
-                              >
-                                <CheckCircle2 size={14} />
-                              </button>
-                            )}
-                            {invoice.status !== 'pendente' && (
-                              <button
-                                onClick={() => updateInvoiceStatus(invoice, 'pendente')}
-                                title="Reverter para pendente"
-                                className="p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100 transition-colors"
-                              >
-                                <RotateCcw size={14} />
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
+                  )}
+                </button>
 
                 {expanded && (
                   <>
+                    {/* Barra de detalhes: valor, arquivo, upload e ações de status */}
+                    <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t border-[#E0D9C3] bg-[#FDFCF7]">
+                      <span className="font-bold text-[#4F4E3A]">{fmt(g.total)}</span>
+                      <span className="text-xs text-[#8C8B6E]">
+                        ({g.items.length} lançamento{g.items.length !== 1 ? 's' : ''})
+                      </span>
+
+                      {g.doctor && (
+                        <div className="flex items-center gap-2 ml-auto flex-wrap">
+                          {invoice?.file_path ? (
+                            <button
+                              onClick={() => openInvoiceFile(invoice.file_path!)}
+                              className="flex items-center gap-1.5 text-xs text-[#4F4E3A] bg-white border border-[#D5CFBE] px-3 py-1.5 rounded-lg hover:bg-[#F5F2E8] transition-colors"
+                              title={invoice.file_name || ''}
+                            >
+                              <ExternalLink size={13} />
+                              <span className="max-w-32 truncate">{invoice.file_name}</span>
+                            </button>
+                          ) : null}
+
+                          <input
+                            ref={(el) => { fileInputRefs.current[g.doctor!.id] = el; }}
+                            type="file"
+                            accept=".pdf,.xml,.png,.jpg,.jpeg"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file && g.doctor) handleUploadInvoice(g.doctor.id, g.total, file);
+                              e.target.value = '';
+                            }}
+                          />
+                          <button
+                            onClick={() => fileInputRefs.current[g.doctor!.id]?.click()}
+                            disabled={isUploading}
+                            className="flex items-center gap-1.5 text-xs bg-[#4F4E3A] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D3C2A] transition-colors disabled:opacity-50"
+                          >
+                            <Upload size={13} />
+                            {isUploading ? 'Enviando...' : invoice?.file_path ? 'Substituir NF' : 'Enviar NF'}
+                          </button>
+
+                          {invoice && (
+                            <div className="flex items-center gap-1">
+                              {invoice.status === 'emitida' && (
+                                <button
+                                  onClick={() => updateInvoiceStatus(invoice, 'enviada')}
+                                  title="Marcar como enviada ao médico"
+                                  className="p-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors"
+                                >
+                                  <Send size={14} />
+                                </button>
+                              )}
+                              {(invoice.status === 'emitida' || invoice.status === 'enviada') && (
+                                <button
+                                  onClick={() => updateInvoiceStatus(invoice, 'paga')}
+                                  title="Marcar como paga"
+                                  className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+                                >
+                                  <CheckCircle2 size={14} />
+                                </button>
+                              )}
+                              {invoice.status !== 'pendente' && (
+                                <button
+                                  onClick={() => updateInvoiceStatus(invoice, 'pendente')}
+                                  title="Reverter para pendente"
+                                  className="p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100 transition-colors"
+                                >
+                                  <RotateCcw size={14} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     {!g.doctor && (
                       <div className="px-5 py-2 text-xs text-[#8C8B6E] bg-[#FDFCF7] flex items-center gap-1.5 border-t border-[#E0D9C3]">
                         <AlertCircle size={12} /> Pacientes particulares — sem médico de indicação, não gera NF de repasse.
