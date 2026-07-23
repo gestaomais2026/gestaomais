@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase, Payment, Patient, Doctor } from '@/lib/supabase';
 import { FileDown, Calendar, Stethoscope, DollarSign, Users } from 'lucide-react';
 import jsPDF from 'jspdf';
-
+import autoTable from 'jspdf-autotable';
 
 // npm install jspdf jspdf-autotable
 
