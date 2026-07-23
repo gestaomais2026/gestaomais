@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  @font-face {
+    font-family: 'Cormorant Garamond';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url(https://fonts.gstatic.com/s/cormorantgaramond/v16/co3YmX5slCNuHLi8bLeY9MK7whWMhyjornFLsS6V7w.woff2) format('woff2');
+  }
+  @font-face {
+    font-family: 'Cormorant Garamond';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url(https://fonts.gstatic.com/s/cormorantgaramond/v16/co3YmX5slCNuHLi8bLeY9MK7whWMhyjornFLsS6V7w.woff2) format('woff2');
+  }
+}
+
+@layer base {
+  :root {
+    --font-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  .font-serif {
+    font-family: var(--font-serif);
+  }
+}
+
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F5F2E8;
+}
+::-webkit-scrollbar-thumb {
+  background: #C4A77D;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8C8B6E;
+}
