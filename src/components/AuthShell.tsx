@@ -21,7 +21,7 @@ export default function AuthShell({ children }: Props) {
               <WPLogo size={64} />
             </div>
             <h1 className="text-2xl font-serif font-bold text-[#4F4E3A] tracking-tight">
-              Wanessa Pinheiro
+              Wanessa Pinho
             </h1>
             <p className="text-sm text-[#8C8B6E] font-medium tracking-wide uppercase mt-1">
               Gestão Mais
