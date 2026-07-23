@@ -1,32 +1,79 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase, Consultation, Patient, Appointment } from '@/lib/supabase';
-import { Plus, Edit2, Trash2, X, ClipboardList, Activity, Clock } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { supabase, Patient, Doctor } from '@/lib/supabase';
+import {
+  Plus, Edit2, Trash2, X, ClipboardList, Stethoscope, Clock, FileDown, Pill,
+} from 'lucide-react';
+import jsPDF from 'jspdf';
+
+// npm install jspdf (jspdf-autotable não é necessário aqui)
+
+// ---------- Tipos locais (ver migration_consultations_prontuario.sql) ----------
+
+interface ConsultationRow {
+  id: string;
+  patient_id: string;
+  appointment_id: string | null;
+  consultation_date: string;
+  clinical_conditions: string | null;
+  medication: string | null;
+  notes: string | null;           // Observações (Nutricionista)
+  psych_notes: string | null;     // Observações (Psicóloga)
+  recommendations: string | null;
+  next_consultation_date: string | null;
+  patient?: (Patient & { doctor?: Doctor | null }) | null;
+  appointment?: { id: string; type?: 'first' | 'return'; session_number?: number | null } | null;
+}
+
+interface AppointmentLite {
+  id: string;
+  patient_id: string;
+  scheduled_at: string;
+  type: 'first' | 'return';
+  session_number?: number | null;
+  patient?: Patient | null;
+}
+
+interface TreatmentPlanLite {
+  id: string;
+  patient_id: string;
+  follow_up_type: 'unico' | '1_mes' | '2_meses' | '3_meses';
+  total_sessions: number;
+  sessions_completed: number;
+  status: 'ativo' | 'finalizado' | 'cancelado';
+}
+
+const FOLLOW_UP_LABELS: Record<string, string> = {
+  unico: 'Único', '1_mes': '1 mês', '2_meses': '2 meses', '3_meses': '3 meses',
+};
 
 const emptyForm = {
   patient_id: '',
+  appointment_id: null as string | null,
   consultation_date: new Date().toISOString().slice(0, 10),
-  weight_kg: '' as string | number,
-  body_fat_pct: '' as string | number,
-  muscle_mass_kg: '' as string | number,
-  waist_cm: '' as string | number,
-  hip_cm: '' as string | number,
-  blood_pressure: '',
-  glucose: '' as string | number,
+  clinical_conditions: '',
+  medication: '',
   notes: '',
+  psych_notes: '',
   recommendations: '',
   next_consultation_date: '',
 };
 
 export default function Consultations() {
-  const [consultations, setConsultations] = useState<Consultation[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
+  const [consultations, setConsultations] = useState<ConsultationRow[]>([]);
+  const [patients, setPatients] = useState<(Patient & { doctor?: Doctor | null })[]>([]);
+  const [todayAppointments, setTodayAppointments] = useState<AppointmentLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Consultation | null>(null);
+  const [editing, setEditing] = useState<ConsultationRow | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+
   const [selectedPatient, setSelectedPatient] = useState<string>('all');
+  const [doctorFilter, setDoctorFilter] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  const [activePlan, setActivePlan] = useState<TreatmentPlanLite | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -37,9 +84,9 @@ export default function Consultations() {
     const [consResult, patResult, apptResult] = await Promise.all([
       supabase
         .from('consultations')
-        .select('*, patient:patients(*)')
+        .select('*, patient:patients(*, doctor:doctors(*)), appointment:appointments(id, type, session_number)')
         .order('consultation_date', { ascending: false }),
-      supabase.from('patients').select('*').order('name'),
+      supabase.from('patients').select('*, doctor:doctors(*)').order('name'),
       supabase
         .from('appointments')
         .select('*, patient:patients(*)')
@@ -49,17 +96,58 @@ export default function Consultations() {
         .order('scheduled_at', { ascending: true }),
     ]);
 
-    setConsultations((consResult.data as Consultation[]) || []);
-    setPatients((patResult.data as Patient[]) || []);
-    setTodayAppointments((apptResult.data as Appointment[]) || []);
+    setConsultations((consResult.data as ConsultationRow[]) || []);
+    setPatients((patResult.data as (Patient & { doctor?: Doctor | null })[]) || []);
+    setTodayAppointments((apptResult.data as AppointmentLite[]) || []);
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = selectedPatient === 'all'
-    ? consultations
-    : consultations.filter((c) => c.patient_id === selectedPatient);
+  // Plano de acompanhamento do paciente selecionado (contexto do prontuário)
+  useEffect(() => {
+    let active = true;
+    async function fetchPlan() {
+      if (selectedPatient === 'all') { setActivePlan(null); return; }
+      const { data } = await supabase
+        .from('treatment_plans')
+        .select('*')
+        .eq('patient_id', selectedPatient)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (active) setActivePlan((data as TreatmentPlanLite) || null);
+    }
+    fetchPlan();
+    return () => { active = false; };
+  }, [selectedPatient]);
+
+  const doctorNames = useMemo(() => {
+    const set = new Set(patients.map((p) => p.doctor?.name ?? 'Particular'));
+    return Array.from(set).sort();
+  }, [patients]);
+
+  const filtered = useMemo(() => {
+    return consultations.filter((c) => {
+      const matchPatient = selectedPatient === 'all' || c.patient_id === selectedPatient;
+      const doctorName = c.patient?.doctor?.name ?? 'Particular';
+      const matchDoctor = doctorFilter === 'all' || doctorName === doctorFilter;
+      const matchFrom = !dateFrom || c.consultation_date >= dateFrom;
+      const matchTo = !dateTo || c.consultation_date <= dateTo;
+      return matchPatient && matchDoctor && matchFrom && matchTo;
+    });
+  }, [consultations, selectedPatient, doctorFilter, dateFrom, dateTo]);
+
+  async function prefillFromLastConsultation(patientId: string) {
+    const { data } = await supabase
+      .from('consultations')
+      .select('clinical_conditions, medication')
+      .eq('patient_id', patientId)
+      .order('consultation_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data as { clinical_conditions: string | null; medication: string | null } | null;
+  }
 
   function openNew() {
     setEditing(null);
@@ -67,29 +155,40 @@ export default function Consultations() {
     setModalOpen(true);
   }
 
-  function openFromAppointment(apt: Appointment) {
+  async function openFromAppointment(apt: AppointmentLite) {
     setEditing(null);
+    const prev = await prefillFromLastConsultation(apt.patient_id);
     setForm({
       ...emptyForm,
       patient_id: apt.patient_id,
+      appointment_id: apt.id,
       consultation_date: new Date().toISOString().slice(0, 10),
+      clinical_conditions: prev?.clinical_conditions || '',
+      medication: prev?.medication || '',
     });
     setModalOpen(true);
   }
 
-  function openEdit(c: Consultation) {
+  async function onSelectPatientInForm(patientId: string) {
+    const prev = await prefillFromLastConsultation(patientId);
+    setForm((f) => ({
+      ...f,
+      patient_id: patientId,
+      clinical_conditions: prev?.clinical_conditions || f.clinical_conditions,
+      medication: prev?.medication || f.medication,
+    }));
+  }
+
+  function openEdit(c: ConsultationRow) {
     setEditing(c);
     setForm({
       patient_id: c.patient_id,
+      appointment_id: c.appointment_id,
       consultation_date: c.consultation_date,
-      weight_kg: c.weight_kg ?? '',
-      body_fat_pct: c.body_fat_pct ?? '',
-      muscle_mass_kg: c.muscle_mass_kg ?? '',
-      waist_cm: c.waist_cm ?? '',
-      hip_cm: c.hip_cm ?? '',
-      blood_pressure: c.blood_pressure ?? '',
-      glucose: c.glucose ?? '',
+      clinical_conditions: c.clinical_conditions ?? '',
+      medication: c.medication ?? '',
       notes: c.notes ?? '',
+      psych_notes: c.psych_notes ?? '',
       recommendations: c.recommendations ?? '',
       next_consultation_date: c.next_consultation_date ?? '',
     });
@@ -99,18 +198,14 @@ export default function Consultations() {
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    const n = (v: string | number) => v === '' ? null : Number(v);
     const payload = {
       patient_id: form.patient_id,
+      appointment_id: form.appointment_id || null,
       consultation_date: form.consultation_date,
-      weight_kg: n(form.weight_kg),
-      body_fat_pct: n(form.body_fat_pct),
-      muscle_mass_kg: n(form.muscle_mass_kg),
-      waist_cm: n(form.waist_cm),
-      hip_cm: n(form.hip_cm),
-      blood_pressure: form.blood_pressure || null,
-      glucose: n(form.glucose),
+      clinical_conditions: form.clinical_conditions || null,
+      medication: form.medication || null,
       notes: form.notes || null,
+      psych_notes: form.psych_notes || null,
       recommendations: form.recommendations || null,
       next_consultation_date: form.next_consultation_date || null,
     };
@@ -130,13 +225,127 @@ export default function Consultations() {
     load();
   }
 
-  const typeLabels: Record<string, string> = {
-    first: 'Primeira consulta', return: 'Retorno', emergency: 'Emergência', online: 'Online',
-  };
+  function fmtDate(d: string) {
+    return new Date(d).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function exportPDF() {
+    const doc = new jsPDF();
+    const marginX = 14;
+    const pageHeight = 283;
+    let y = 40;
+
+    doc.setFillColor(79, 78, 58);
+    doc.rect(0, 0, 210, 30, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Prontuário — Histórico de Consultas', marginX, 15);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    const periodText = dateFrom || dateTo
+      ? `Período: ${dateFrom ? fmtDate(dateFrom) : 'início'} a ${dateTo ? fmtDate(dateTo) : 'hoje'}`
+      : 'Período: todos os registros';
+    doc.text(periodText, marginX, 22);
+    doc.text(
+      doctorFilter === 'all' ? 'Todos os médicos / indicações' : `Médico / indicação: ${doctorFilter}`,
+      marginX,
+      27
+    );
+
+    function ensureSpace(lines: number) {
+      if (y + lines * 5 > pageHeight) {
+        doc.addPage();
+        y = 20;
+      }
+    }
+
+    function printField(label: string, value: string | null | undefined) {
+      if (!value) return;
+      ensureSpace(2);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(107, 142, 90);
+      doc.text(label, marginX + 4, y);
+      y += 4;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(60, 60, 60);
+      const split = doc.splitTextToSize(value, 180);
+      ensureSpace(split.length);
+      doc.text(split, marginX + 4, y);
+      y += split.length * 4.2 + 2;
+    }
+
+    // Agrupa por médico > paciente
+    const byDoctor = new Map<string, Map<string, ConsultationRow[]>>();
+    for (const c of filtered) {
+      const doctorName = c.patient?.doctor?.name ?? 'Particular';
+      const patientName = c.patient?.name ?? 'Paciente';
+      if (!byDoctor.has(doctorName)) byDoctor.set(doctorName, new Map());
+      const byPatient = byDoctor.get(doctorName)!;
+      if (!byPatient.has(patientName)) byPatient.set(patientName, []);
+      byPatient.get(patientName)!.push(c);
+    }
+
+    const doctorNamesSorted = Array.from(byDoctor.keys()).sort();
+
+    for (const doctorName of doctorNamesSorted) {
+      ensureSpace(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(79, 78, 58);
+      doc.text(doctorName, marginX, y);
+      y += 7;
+
+      const byPatient = byDoctor.get(doctorName)!;
+      const patientNamesSorted = Array.from(byPatient.keys()).sort();
+
+      for (const patientName of patientNamesSorted) {
+        ensureSpace(6);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(79, 78, 58);
+        doc.text(patientName, marginX + 2, y);
+        y += 5;
+
+        const records = byPatient.get(patientName)!.slice().sort(
+          (a, b) => a.consultation_date.localeCompare(b.consultation_date)
+        );
+
+        for (const c of records) {
+          ensureSpace(6);
+          const sessionLabel = c.appointment?.session_number ? ` · Sessão ${c.appointment.session_number}` : '';
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9.5);
+          doc.setTextColor(140, 139, 110);
+          doc.text(`${fmtDate(c.consultation_date)}${sessionLabel}`, marginX + 4, y);
+          y += 5;
+
+          printField('Condições clínicas', c.clinical_conditions);
+          printField('Medicamento em uso', c.medication);
+          printField('Observações (Nutricionista)', c.notes);
+          printField('Observações (Psicóloga)', c.psych_notes);
+          printField('Recomendações', c.recommendations);
+          y += 3;
+        }
+        y += 3;
+      }
+      y += 4;
+    }
+
+    if (filtered.length === 0) {
+      doc.setTextColor(140, 139, 110);
+      doc.text('Nenhum registro encontrado para os filtros selecionados.', marginX, y);
+    }
+
+    const filename = `prontuario-${dateFrom || 'inicio'}-a-${dateTo || 'hoje'}.pdf`;
+    doc.save(filename);
+  }
 
   return (
     <div className="space-y-6">
-      {/* Today's appointments */}
+      {/* Agendamentos de hoje */}
       {todayAppointments.length > 0 && (
         <div className="bg-gradient-to-r from-[#4F4E3A] to-[#6B6A50] rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
@@ -161,7 +370,8 @@ export default function Consultations() {
                     <p className="text-white font-medium truncate">{apt.patient?.name}</p>
                     <p className="text-[#C4A77D] text-xs">
                       {new Date(apt.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                      {' · '}{typeLabels[apt.type] || apt.type}
+                      {' · '}{apt.type === 'first' ? 'Primeira consulta' : 'Retorno'}
+                      {apt.session_number ? ` · Sessão ${apt.session_number}` : ''}
                     </p>
                   </div>
                   <Plus size={16} className="text-white/50 group-hover:text-white ml-auto flex-shrink-0 transition-colors" />
@@ -172,17 +382,52 @@ export default function Consultations() {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3 justify-between">
-        <select value={selectedPatient} onChange={(e) => setSelectedPatient(e.target.value)}
-          className="px-4 py-3 rounded-xl border border-[#D5CFBE] bg-white focus:border-[#8C8B6E] outline-none text-[#4F4E3A] text-sm max-w-xs">
-          <option value="all">Todos os pacientes</option>
-          {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <button onClick={openNew}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl bg-[#4F4E3A] text-white font-medium hover:bg-[#3D3C2A] transition-all shadow-md flex-shrink-0">
-          <Plus size={20} /> Nova Consulta
-        </button>
+      {/* Filtros / Relatório */}
+      <div className="bg-white rounded-2xl shadow-sm border border-[#E0D9C3] p-5">
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-end flex-wrap">
+          <div>
+            <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Paciente</label>
+            <select value={selectedPatient} onChange={(e) => setSelectedPatient(e.target.value)} className={inputClass}>
+              <option value="all">Todos os pacientes</option>
+              {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Médico / Indicação</label>
+            <select value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)} className={inputClass}>
+              <option value="all">Todos</option>
+              {doctorNames.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">De</label>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Até</label>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={inputClass} />
+          </div>
+          <div className="flex gap-2 ml-auto">
+            <button onClick={exportPDF} disabled={filtered.length === 0}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#D5CFBE] bg-white text-[#4F4E3A] text-sm font-medium hover:bg-[#F5F2E8] transition-colors disabled:opacity-50">
+              <FileDown size={18} /> Emitir PDF
+            </button>
+            <button onClick={openNew}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#4F4E3A] text-white font-medium hover:bg-[#3D3C2A] transition-all shadow-md">
+              <Plus size={20} /> Nova Consulta
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Contexto do acompanhamento do paciente selecionado */}
+      {selectedPatient !== 'all' && activePlan && (
+        <div className="bg-[#F5F2E8] border border-[#E0D9C3] rounded-xl px-4 py-3 text-sm text-[#4F4E3A] flex items-center gap-2">
+          <Pill size={16} className="text-[#6B8E5A]" />
+          Acompanhamento {FOLLOW_UP_LABELS[activePlan.follow_up_type]} · Sessão {activePlan.sessions_completed} de {activePlan.total_sessions}
+          {activePlan.status === 'finalizado' && ' · Finalizado'}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -204,8 +449,14 @@ export default function Consultations() {
                   </div>
                   <div>
                     <h3 className="font-serif font-bold text-[#4F4E3A]">{c.patient?.name}</h3>
-                    <p className="text-xs text-[#8C8B6E]">
-                      {new Date(c.consultation_date).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    <p className="text-xs text-[#8C8B6E] flex items-center gap-1 flex-wrap">
+                      <span>{fmtDate(c.consultation_date)}</span>
+                      {c.appointment?.session_number && <span>· Sessão {c.appointment.session_number}</span>}
+                      {c.patient?.doctor?.name && (
+                        <span className="inline-flex items-center gap-1 text-[#6B8E5A]">
+                          · <Stethoscope size={11} /> {c.patient.doctor.name}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -221,26 +472,37 @@ export default function Consultations() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-                <Metric label="Peso" value={c.weight_kg} unit="kg" />
-                <Metric label="% Gordura" value={c.body_fat_pct} unit="%" />
-                <Metric label="Massa Muscular" value={c.muscle_mass_kg} unit="kg" />
-                <Metric label="Cintura" value={c.waist_cm} unit="cm" />
-                <Metric label="Quadril" value={c.hip_cm} unit="cm" />
-                <Metric label="P.A." value={c.blood_pressure} />
-                <Metric label="Glicose" value={c.glucose} unit="mg/dL" />
-              </div>
+              {(c.medication || c.clinical_conditions) && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {c.medication && (
+                    <span className="inline-flex items-center gap-1.5 text-xs bg-[#F5F2E8] text-[#4F4E3A] px-3 py-1.5 rounded-lg">
+                      <Pill size={12} /> {c.medication}
+                    </span>
+                  )}
+                  {c.clinical_conditions && (
+                    <span className="text-xs bg-[#F5F2E8] text-[#4F4E3A] px-3 py-1.5 rounded-lg">
+                      {c.clinical_conditions}
+                    </span>
+                  )}
+                </div>
+              )}
 
-              {(c.notes || c.recommendations) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 pt-4 border-t border-[#E0D9C3]">
+              {(c.notes || c.psych_notes || c.recommendations) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-[#E0D9C3]">
                   {c.notes && (
                     <div>
-                      <p className="text-xs font-medium text-[#8C8B6E] uppercase mb-1">Anotações</p>
+                      <p className="text-xs font-medium text-[#8C8B6E] uppercase mb-1">Obs. Nutricionista</p>
                       <p className="text-sm text-[#4F4E3A]">{c.notes}</p>
                     </div>
                   )}
-                  {c.recommendations && (
+                  {c.psych_notes && (
                     <div>
+                      <p className="text-xs font-medium text-[#8C8B6E] uppercase mb-1">Obs. Psicóloga</p>
+                      <p className="text-sm text-[#4F4E3A]">{c.psych_notes}</p>
+                    </div>
+                  )}
+                  {c.recommendations && (
+                    <div className="sm:col-span-2">
                       <p className="text-xs font-medium text-[#8C8B6E] uppercase mb-1">Recomendações</p>
                       <p className="text-sm text-[#4F4E3A]">{c.recommendations}</p>
                     </div>
@@ -249,8 +511,8 @@ export default function Consultations() {
               )}
 
               {c.next_consultation_date && (
-                <div className="mt-4 flex items-center gap-2 text-sm text-[#C4A77D] bg-[#F5F2E8] rounded-lg px-3 py-2">
-                  <Activity size={16} />
+                <div className="mt-3 flex items-center gap-2 text-sm text-[#C4A77D] bg-[#F5F2E8] rounded-lg px-3 py-2">
+                  <Clock size={16} />
                   Próxima consulta: {new Date(c.next_consultation_date).toLocaleDateString('pt-BR')}
                 </div>
               )}
@@ -259,6 +521,7 @@ export default function Consultations() {
         </div>
       )}
 
+      {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -274,7 +537,8 @@ export default function Consultations() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Paciente *</label>
-                  <select required value={form.patient_id} onChange={(e) => setForm({ ...form, patient_id: e.target.value })}
+                  <select required value={form.patient_id} disabled={!!editing}
+                    onChange={(e) => onSelectPatientInForm(e.target.value)}
                     className={inputClass}>
                     <option value="">Selecione...</option>
                     {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -287,17 +551,11 @@ export default function Consultations() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <NumField label="Peso (kg)" value={form.weight_kg} onChange={(v) => setForm({ ...form, weight_kg: v })} step="0.01" />
-                <NumField label="% Gordura" value={form.body_fat_pct} onChange={(v) => setForm({ ...form, body_fat_pct: v })} step="0.1" />
-                <NumField label="Massa Muscular (kg)" value={form.muscle_mass_kg} onChange={(v) => setForm({ ...form, muscle_mass_kg: v })} step="0.01" />
-                <NumField label="Cintura (cm)" value={form.waist_cm} onChange={(v) => setForm({ ...form, waist_cm: v })} step="0.1" />
-                <NumField label="Quadril (cm)" value={form.hip_cm} onChange={(v) => setForm({ ...form, hip_cm: v })} step="0.1" />
-                <NumField label="Glicose (mg/dL)" value={form.glucose} onChange={(v) => setForm({ ...form, glucose: v })} step="0.1" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Pressão arterial</label>
-                  <input value={form.blood_pressure} onChange={(e) => setForm({ ...form, blood_pressure: e.target.value })}
-                    placeholder="Ex: 120/80" className={inputClass} />
+                  <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Medicamento em uso</label>
+                  <input value={form.medication} onChange={(e) => setForm({ ...form, medication: e.target.value })}
+                    placeholder="Ex: Mounjaro, Ozempic..." className={inputClass} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Próxima consulta</label>
@@ -307,13 +565,24 @@ export default function Consultations() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Anotações</label>
+                <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Condições clínicas</label>
+                <textarea rows={2} value={form.clinical_conditions}
+                  onChange={(e) => setForm({ ...form, clinical_conditions: e.target.value })} className={inputClass} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Observações (Nutricionista)</label>
                 <textarea rows={3} value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })} className={inputClass} />
               </div>
               <div>
+                <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Observações (Psicóloga)</label>
+                <textarea rows={3} value={form.psych_notes}
+                  onChange={(e) => setForm({ ...form, psych_notes: e.target.value })} className={inputClass} />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Recomendações</label>
-                <textarea rows={3} value={form.recommendations}
+                <textarea rows={2} value={form.recommendations}
                   onChange={(e) => setForm({ ...form, recommendations: e.target.value })} className={inputClass} />
               </div>
 
@@ -336,26 +605,3 @@ export default function Consultations() {
 }
 
 const inputClass = "w-full px-4 py-2.5 rounded-xl border border-[#D5CFBE] bg-[#FDFCF7] focus:border-[#8C8B6E] focus:ring-2 focus:ring-[#8C8B6E]/20 outline-none transition-all text-[#4F4E3A] text-sm";
-
-function Metric({ label, value, unit }: { label: string; value: string | number | null; unit?: string }) {
-  return (
-    <div className="bg-[#F5F2E8] rounded-lg px-3 py-2 text-center">
-      <p className="text-xs text-[#8C8B6E] mb-0.5 leading-tight">{label}</p>
-      <p className="text-sm font-bold text-[#4F4E3A]">
-        {value !== null && value !== '' && value !== undefined ? `${value}${unit ? ' ' + unit : ''}` : '-'}
-      </p>
-    </div>
-  );
-}
-
-function NumField({ label, value, onChange, step }: {
-  label: string; value: string | number; onChange: (v: string) => void; step?: string;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">{label}</label>
-      <input type="number" step={step} value={value}
-        onChange={(e) => onChange(e.target.value)} className={inputClass} />
-    </div>
-  );
-}
