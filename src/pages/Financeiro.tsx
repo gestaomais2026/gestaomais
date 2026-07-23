@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase, Payment, Patient, Doctor } from '@/lib/supabase';
 import {
   FileDown, Calendar, Stethoscope, DollarSign, Users, Upload, ExternalLink,
-  AlertCircle, CheckCircle2, Send, FileCheck2, RotateCcw,
+  AlertCircle, CheckCircle2, Send, FileCheck2, RotateCcw, ChevronLeft, ChevronRight, ChevronDown,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -67,6 +67,8 @@ export default function PrestacaoContas() {
   const [uploadingDoctorId, setUploadingDoctorId] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  const [expandedDoctors, setExpandedDoctors] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
   }, []);
@@ -85,6 +87,11 @@ export default function PrestacaoContas() {
   }, [dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Ao trocar de período, recolhe tudo de novo (evita "vazar" contexto de um mês pro outro)
+  useEffect(() => {
+    setExpandedDoctors(new Set());
+  }, [dateFrom, dateTo]);
 
   // Agrupa por médico de indicação. Pacientes sem indicação caem em "Particular".
   const grouped = useMemo(() => {
@@ -129,6 +136,21 @@ export default function PrestacaoContas() {
   const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('pt-BR');
   const periodLabel = () => `${fmtDate(dateFrom)} a ${fmtDate(dateTo)}`;
+
+  function shiftMonth(delta: number) {
+    const base = new Date(`${dateFrom}T00:00:00`);
+    const target = new Date(base.getFullYear(), base.getMonth() + delta, 1);
+    setDateFrom(firstDayOfMonth(target));
+    setDateTo(lastDayOfMonth(target));
+  }
+
+  function toggleDoctor(name: string) {
+    setExpandedDoctors((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }
 
   async function handleUploadInvoice(doctorId: string, total: number, file: File) {
     if (!userId) return;
@@ -266,8 +288,25 @@ export default function PrestacaoContas() {
     return !inv || inv.status === 'pendente';
   }).length;
 
+  const monthLabel = new Date(`${dateFrom}T00:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
   return (
     <div className="space-y-6">
+      {/* Navegação do mês */}
+      <div className="flex items-center justify-center gap-4">
+        <button onClick={() => shiftMonth(-1)}
+          className="p-2 rounded-lg text-[#4F4E3A] hover:bg-[#F5F2E8] transition-colors" title="Mês anterior">
+          <ChevronLeft size={22} />
+        </button>
+        <h2 className="text-lg font-serif font-bold text-[#4F4E3A] capitalize min-w-48 text-center">
+          {monthLabel}
+        </h2>
+        <button onClick={() => shiftMonth(1)}
+          className="p-2 rounded-lg text-[#4F4E3A] hover:bg-[#F5F2E8] transition-colors" title="Próximo mês">
+          <ChevronRight size={22} />
+        </button>
+      </div>
+
       {/* Filtros */}
       <div className="bg-white rounded-2xl shadow-sm border border-[#E0D9C3] p-5">
         <div className="flex flex-col sm:flex-row gap-3 sm:items-end flex-wrap">
@@ -330,23 +369,31 @@ export default function PrestacaoContas() {
           <p className="text-[#8C8B6E] text-lg">Nenhum recebimento no período selecionado</p>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-3">
           {visibleGroups.map((g) => {
             const invoice = g.doctor ? invoicesByDoctor[g.doctor.id] : undefined;
             const statusCfg = invoice ? STATUS_CONFIG[invoice.status] : STATUS_CONFIG.pendente;
             const isUploading = g.doctor ? uploadingDoctorId === g.doctor.id : false;
+            const expanded = expandedDoctors.has(g.name);
 
             return (
               <div key={g.name} className="bg-white rounded-2xl shadow-sm border border-[#E0D9C3] overflow-hidden">
-                <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 bg-[#F5F2E8] border-b border-[#E0D9C3]">
+                <div
+                  onClick={() => toggleDoctor(g.name)}
+                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 bg-[#F5F2E8] cursor-pointer hover:bg-[#EDE8D9] transition-colors"
+                >
                   <div className="flex items-center gap-2">
+                    <ChevronDown
+                      size={16}
+                      className={`text-[#8C8B6E] transition-transform ${expanded ? 'rotate-0' : '-rotate-90'}`}
+                    />
                     <Stethoscope size={16} className="text-[#6B8E5A]" />
                     <h3 className="font-serif font-bold text-[#4F4E3A]">{g.name}</h3>
                     <span className="text-xs text-[#8C8B6E]">
                       ({g.items.length} lançamento{g.items.length !== 1 ? 's' : ''})
                     </span>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
                     <span className="font-bold text-[#4F4E3A]">{fmt(g.total)}</span>
 
                     {g.doctor && (
@@ -422,36 +469,39 @@ export default function PrestacaoContas() {
                   </div>
                 </div>
 
-                {!g.doctor && (
-                  <div className="px-5 py-2 text-xs text-[#8C8B6E] bg-[#FDFCF7] flex items-center gap-1.5">
-                    <AlertCircle size={12} /> Pacientes particulares — sem médico de indicação, não gera NF de repasse.
-                  </div>
+                {expanded && (
+                  <>
+                    {!g.doctor && (
+                      <div className="px-5 py-2 text-xs text-[#8C8B6E] bg-[#FDFCF7] flex items-center gap-1.5 border-t border-[#E0D9C3]">
+                        <AlertCircle size={12} /> Pacientes particulares — sem médico de indicação, não gera NF de repasse.
+                      </div>
+                    )}
+                    <div className="overflow-x-auto border-t border-[#E0D9C3]">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-[#8C8B6E]">
+                            <th className="px-4 py-2 font-medium">Data</th>
+                            <th className="px-4 py-2 font-medium">Paciente</th>
+                            <th className="px-4 py-2 font-medium">Descrição</th>
+                            <th className="px-4 py-2 font-medium">Forma Pgto.</th>
+                            <th className="px-4 py-2 font-medium text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.items.map((p) => (
+                            <tr key={p.id} className="border-t border-[#E0D9C3]">
+                              <td className="px-4 py-2 text-[#4F4E3A] whitespace-nowrap">{fmtDate(p.service_date)}</td>
+                              <td className="px-4 py-2 text-[#4F4E3A]">{p.patient?.name}</td>
+                              <td className="px-4 py-2 text-[#8C8B6E]">{p.description || '-'}</td>
+                              <td className="px-4 py-2 text-[#8C8B6E]">{methodLabels[p.payment_method ?? ''] || '-'}</td>
+                              <td className="px-4 py-2 text-right font-medium text-[#4F4E3A]">{fmt(Number(p.amount))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-[#8C8B6E]">
-                        <th className="px-4 py-2 font-medium">Data</th>
-                        <th className="px-4 py-2 font-medium">Paciente</th>
-                        <th className="px-4 py-2 font-medium">Descrição</th>
-                        <th className="px-4 py-2 font-medium">Forma Pgto.</th>
-                        <th className="px-4 py-2 font-medium text-right">Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {g.items.map((p) => (
-                        <tr key={p.id} className="border-t border-[#E0D9C3]">
-                          <td className="px-4 py-2 text-[#4F4E3A] whitespace-nowrap">{fmtDate(p.service_date)}</td>
-                          <td className="px-4 py-2 text-[#4F4E3A]">{p.patient?.name}</td>
-                          <td className="px-4 py-2 text-[#8C8B6E]">{p.description || '-'}</td>
-                          <td className="px-4 py-2 text-[#8C8B6E]">{methodLabels[p.payment_method ?? ''] || '-'}</td>
-                          <td className="px-4 py-2 text-right font-medium text-[#4F4E3A]">{fmt(Number(p.amount))}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             );
           })}
@@ -477,4 +527,3 @@ function SummaryCard({
     </div>
   );
 }
-
