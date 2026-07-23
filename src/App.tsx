@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import Login from '@/pages/Login';
+import AuthFlow from '@/pages/AuthFlow';
+import ResetPassword from '@/pages/ResetPassword';
 import Layout, { Page } from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Patients from '@/pages/Patients';
@@ -8,11 +9,20 @@ import Appointments from '@/pages/Appointments';
 import Consultations from '@/pages/Consultations';
 import Plans from '@/pages/Plans';
 import FollowUps from '@/pages/FollowUps';
+import Doctors from '@/pages/Doctors';
+import Reports from '@/pages/Reports';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
   const { session, loading } = useAuth();
   const [page, setPage] = useState<Page>('dashboard');
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setPasswordRecovery(true);
+    window.addEventListener('auth:password-recovery', handler);
+    return () => window.removeEventListener('auth:password-recovery', handler);
+  }, []);
 
   if (loading) {
     return (
@@ -22,8 +32,12 @@ function AppContent() {
     );
   }
 
+  if (passwordRecovery) {
+    return <ResetPassword />;
+  }
+
   if (!session) {
-    return <Login />;
+    return <AuthFlow />;
   }
 
   return (
@@ -34,6 +48,8 @@ function AppContent() {
       {page === 'consultations' && <Consultations />}
       {page === 'plans' && <Plans />}
       {page === 'followups' && <FollowUps />}
+      {page === 'doctors' && <Doctors />}
+      {page === 'reports' && <Reports />}
     </Layout>
   );
 }

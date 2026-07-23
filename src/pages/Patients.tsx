@@ -1,15 +1,16 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase, Patient } from '@/lib/supabase';
-import { Search, Plus, Edit2, Trash2, Phone, Mail, X, UserPlus } from 'lucide-react';
+import { supabase, Patient, Doctor } from '@/lib/supabase';
+import { Search, Plus, Edit2, Trash2, Phone, Mail, X, UserPlus, Stethoscope } from 'lucide-react';
 
 const emptyForm: Partial<Patient> = {
   name: '', email: '', phone: '', birth_date: '', gender: 'female',
   weight_kg: null, height_cm: null, objective: '', health_history: '',
-  allergies: '', medications: '', status: 'active',
+  allergies: '', medications: '', status: 'active', doctor_id: null,
 };
 
 export default function Patients() {
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -19,10 +20,12 @@ export default function Patients() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    let q = supabase.from('patients').select('*').order('name', { ascending: true });
+    let q = supabase.from('patients').select('*, doctor:doctors(*)').order('name', { ascending: true });
     if (search) q = q.ilike('name', `%${search}%`);
     const { data } = await q;
     setPatients((data as Patient[]) || []);
+    const { data: dData } = await supabase.from('doctors').select('*').order('name');
+    setDoctors((dData as Doctor[]) || []);
     setLoading(false);
   }, [search]);
 
@@ -56,6 +59,7 @@ export default function Patients() {
       allergies: form.allergies || null,
       medications: form.medications || null,
       status: form.status || 'active',
+      doctor_id: form.doctor_id || null,
     };
 
     if (editing) {
@@ -150,6 +154,14 @@ export default function Patients() {
                   <p className="text-sm text-[#4F4E3A] bg-[#F5F2E8] rounded-lg px-3 py-2 mb-3 line-clamp-2">
                     🎯 {p.objective}
                   </p>
+                )}
+
+                {p.doctor && (
+                  <div className="flex items-center gap-2 text-sm text-[#4F4E3A] bg-gradient-to-r from-[#6B8E5A]/10 to-[#4F6B3E]/10 rounded-lg px-3 py-2 mb-3">
+                    <Stethoscope size={14} className="text-[#6B8E5A]" />
+                    <span className="font-medium">{p.doctor.name}</span>
+                    {p.doctor.specialty && <span className="text-[#8C8B6E] text-xs">· {p.doctor.specialty}</span>}
+                  </div>
                 )}
 
                 <div className="grid grid-cols-3 gap-2 text-center mb-3">
@@ -256,6 +268,14 @@ export default function Patients() {
                     className={inputClass} />
                 </Field>
               </div>
+
+              <Field label="Médico referente (indicação)">
+                <select value={form.doctor_id || ''} onChange={(e) => setForm({ ...form, doctor_id: e.target.value || null })}
+                  className={inputClass}>
+                  <option value="">Nenhum / Sem indicação</option>
+                  {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? ` — ${d.specialty}` : ''}</option>)}
+                </select>
+              </Field>
 
               <Field label="Objetivo">
                 <input value={form.objective || ''} onChange={(e) => setForm({ ...form, objective: e.target.value })}

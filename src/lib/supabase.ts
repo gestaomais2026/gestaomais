@@ -15,6 +15,20 @@ export type Profile = {
   updated_at: string;
 };
 
+export type Doctor = {
+  id: string;
+  user_id: string;
+  name: string;
+  specialty: string | null;
+  crm: string | null;
+  email: string | null;
+  phone: string | null;
+  notes: string | null;
+  status: 'active' | 'inactive';
+  created_at: string;
+  updated_at: string;
+};
+
 export type Patient = {
   id: string;
   user_id: string;
@@ -30,8 +44,10 @@ export type Patient = {
   allergies: string | null;
   medications: string | null;
   status: 'active' | 'inactive' | 'paused';
+  doctor_id: string | null;
   created_at: string;
   updated_at: string;
+  doctor?: Doctor;
 };
 
 export type Appointment = {
