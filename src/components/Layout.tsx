@@ -45,7 +45,7 @@ export default function Layout({ currentPage, onNavigate, children }: {
               <WPLogo size={32} />
             </div>
             <div>
-              <h2 className="text-white font-serif font-bold text-sm leading-tight">Wanessa Pinheiro</h2>
+              <h2 className="text-white font-serif font-bold text-sm leading-tight">Wanessa Pinho</h2>
               <p className="text-[#C4A77D] text-xs uppercase tracking-wide">Gestão Mais</p>
             </div>
           </div>
