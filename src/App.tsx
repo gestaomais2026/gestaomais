@@ -7,8 +7,6 @@ import Dashboard from '@/pages/Dashboard';
 import Patients from '@/pages/Patients';
 import Appointments from '@/pages/Appointments';
 import Consultations from '@/pages/Consultations';
-import Plans from '@/pages/Plans';
-import FollowUps from '@/pages/FollowUps';
 import Doctors from '@/pages/Doctors';
 import Financeiro from '@/pages/Financeiro';
 import { Loader2 } from 'lucide-react';
@@ -46,8 +44,6 @@ function AppContent() {
       {page === 'patients' && <Patients />}
       {page === 'appointments' && <Appointments />}
       {page === 'consultations' && <Consultations />}
-      {page === 'plans' && <Plans />}
-      {page === 'followups' && <FollowUps />}
       {page === 'doctors' && <Doctors />}
       {page === 'financeiro' && <Financeiro />}
     </Layout>

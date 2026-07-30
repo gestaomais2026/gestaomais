@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import WPLogo from '@/components/WPLogo';
 import {
-  LayoutDashboard, Users, Calendar, ClipboardList, Activity,
+  LayoutDashboard, Users, Calendar, ClipboardList,
   Stethoscope, DollarSign, LogOut, Menu, X
 } from 'lucide-react';
 
-export type Page = 'dashboard' | 'patients' | 'appointments' | 'consultations' | 'plans' | 'followups' | 'doctors' | 'financeiro';
+export type Page = 'dashboard' | 'patients' | 'appointments' | 'consultations' | 'doctors' | 'financeiro';
 
 type NavItem = { id: Page; label: string; icon: React.ElementType };
 
@@ -15,8 +15,6 @@ const navItems: NavItem[] = [
   { id: 'patients', label: 'Pacientes', icon: Users },
   { id: 'appointments', label: 'Agenda', icon: Calendar },
   { id: 'consultations', label: 'Consultas', icon: ClipboardList },
-  { id: 'plans', label: 'Planos Alimentares', icon: Activity },
-  { id: 'followups', label: 'Acompanhamento', icon: Activity },
   { id: 'doctors', label: 'Médicos Referentes', icon: Stethoscope },
   { id: 'financeiro', label: 'Contas a Receber', icon: DollarSign },
 ];
