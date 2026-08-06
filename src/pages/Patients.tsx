@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase, Patient, Doctor } from '@/lib/supabase';
-import { Search, Plus, Edit2, Trash2, Phone, Mail, X, UserPlus, Stethoscope } from 'lucide-react';
+import AnamneseViewer from '@/components/AnamneseViewer';
+import { Search, Plus, Edit2, Trash2, Phone, Mail, X, UserPlus, Stethoscope, ClipboardList } from 'lucide-react';
 
 const emptyForm: Partial<Patient> = {
   name: '', email: '', phone: '', birth_date: '', gender: 'female',
@@ -156,6 +157,12 @@ export default function Patients() {
                   </p>
                 )}
 
+                {p.from_anamnese && (
+                  <div className="inline-flex items-center gap-1 text-xs bg-[#6B8E5A]/10 text-[#4F6B3E] px-2.5 py-1 rounded-lg mb-3">
+                    <ClipboardList size={12} /> Cadastro via anamnese
+                  </div>
+                )}
+
                 {p.doctor && (
                   <div className="flex items-center gap-2 text-sm text-[#4F4E3A] bg-gradient-to-r from-[#6B8E5A]/10 to-[#4F6B3E]/10 rounded-lg px-3 py-2 mb-3">
                     <Stethoscope size={14} className="text-[#6B8E5A]" />
@@ -191,6 +198,12 @@ export default function Patients() {
                     </div>
                   )}
                 </div>
+
+                {p.from_anamnese && (
+                  <div className="mb-3">
+                    <AnamneseViewer patientId={p.id} patientName={p.name} trigger="badge" />
+                  </div>
+                )}
 
                 <div className="flex gap-2 pt-3 border-t border-[#E0D9C3]">
                   <button

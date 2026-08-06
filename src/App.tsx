@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import AuthFlow from '@/pages/AuthFlow';
 import ResetPassword from '@/pages/ResetPassword';
+import AnamnesePage from '@/pages/AnamnesePage';
 import Layout, { Page } from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Patients from '@/pages/Patients';
@@ -11,16 +12,31 @@ import Doctors from '@/pages/Doctors';
 import Financeiro from '@/pages/Financeiro';
 import { Loader2 } from 'lucide-react';
 
+function isAnamneseRoute() {
+  return window.location.pathname.replace(/\/+$/, '').endsWith('/anamnese');
+}
+
 function AppContent() {
   const { session, loading } = useAuth();
   const [page, setPage] = useState<Page>('dashboard');
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [anamneseRoute, setAnamneseRoute] = useState(isAnamneseRoute());
 
   useEffect(() => {
     const handler = () => setPasswordRecovery(true);
     window.addEventListener('auth:password-recovery', handler);
     return () => window.removeEventListener('auth:password-recovery', handler);
   }, []);
+
+  useEffect(() => {
+    const handler = () => setAnamneseRoute(isAnamneseRoute());
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, []);
+
+  if (anamneseRoute) {
+    return <AnamnesePage />;
+  }
 
   if (loading) {
     return (

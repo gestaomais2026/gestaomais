@@ -45,9 +45,50 @@ export type Patient = {
   medications: string | null;
   status: 'active' | 'inactive' | 'paused';
   doctor_id: string | null;
+  profession: string | null;
+  from_anamnese: boolean;
   created_at: string;
   updated_at: string;
   doctor?: Doctor;
+  anamnese?: Anamnese | null;
+};
+
+export type Anamnese = {
+  id: string;
+  patient_id: string;
+  motivo_consulta: string | null;
+  acompanhamento_anterior: string | null;
+  patologia: string | null;
+  historia_familiar: string | null;
+  cirurgia: string | null;
+  qual_cirurgia: string | null;
+  medicamento_continuo: string | null;
+  qual_medicamento: string | null;
+  queixas: string | null;
+  outras_queixas: string | null;
+  alergia: string | null;
+  atividade_fisica: string | null;
+  suplemento: string | null;
+  consumo_agua: string | null;
+  restricao_alimentar: string | null;
+  intolerancia: string | null;
+  alcool: string | null;
+  moradia: string | null;
+  habitos_cozinhar: string | null;
+  alimentos_nao_gosta: string | null;
+  qualidade_sono: string | null;
+  horas_sono: number | null;
+  funcionamento_intestino: string | null;
+  tipo_fezes: string | null;
+  dificuldade_evacuar: string | null;
+  cor_urina: string | null;
+  avaliacao_alimentar: string | null;
+  dificuldades_alimentacao: string | null;
+  motivacao: number | null;
+  exames_recentes: string | null;
+  encaminhar_exames: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Appointment = {
