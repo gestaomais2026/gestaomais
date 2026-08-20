@@ -6,14 +6,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+// 🔥 UUID do perfil da nutricionista (sistema) – fornecido por você
+const NUTRITIONIST_USER_ID = "ab69ebc1-a3a9-4ba7-806d-f4f064256986";
+
 interface AnamnesePayload {
-  // Dados pessoais
   nome: string;
   nascimento: string;
   profissao?: string;
   whatsapp: string;
   email?: string;
-  // Motivo e histórico
   motivo: string;
   nutri?: "Sim" | "Não";
   patologia?: string;
@@ -22,11 +23,9 @@ interface AnamnesePayload {
   qualCirurgia?: string;
   medicamento?: "Sim" | "Não";
   qualMedicamento?: string;
-  // Queixas
   queixas?: string[];
   outrasQueixas?: string;
   alergia?: string;
-  // Estilo de vida
   atividadeFisica?: string;
   suplemento?: string;
   agua?: string;
@@ -36,14 +35,12 @@ interface AnamnesePayload {
   moradia?: string;
   cozinhar?: "Sim" | "Não" | "Às vezes";
   naoGosta?: string;
-  // Sono, intestino, urina
   qualidadeSono?: string;
   horasSono?: number;
   intestino?: string;
   fezes?: string;
   dificuldadeEvac?: "Sim" | "Não";
   corUrina?: string;
-  // Avaliação e motivação
   alimentacao?: string;
   dificuldades?: string;
   motivacao?: number;
@@ -90,52 +87,63 @@ Deno.serve(async (req: Request) => {
       auth: { persistSession: false },
     });
 
-    // Encontra a nutricionista (primeiro admin/nutritionist) para vincular o paciente.
-    const { data: profile, error: profileErr } = await admin
-      .from("profiles")
-      .select("id, role")
-      .order("created_at", { ascending: true })
-      .limit(1)
+    // 1. Verifica se já existe paciente com este telefone
+    const { data: existingPatient, error: findError } = await admin
+      .from("patients")
+      .select("id")
+      .eq("phone", body.whatsapp.trim())
       .maybeSingle();
 
-    if (profileErr || !profile) {
+    if (findError) {
       return new Response(
-        JSON.stringify({ error: "Nenhuma nutricionista cadastrada para receber a anamnese" }),
+        JSON.stringify({ error: "Erro ao buscar paciente: " + findError.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Cria o paciente com os dados pessoais
-    const { data: patient, error: patientErr } = await admin
-      .from("patients")
-      .insert({
-        user_id: profile.id,
-        name: body.nome.trim(),
-        email: body.email?.trim() || null,
-        phone: body.whatsapp.trim(),
-        birth_date: body.nascimento,
-        gender: null,
-        objective: body.motivo.trim(),
-        health_history: body.patologia?.trim() || null,
-        allergies: body.alergia?.trim() || null,
-        medications: body.qualMedicamento?.trim() || null,
-        status: "active",
-        from_anamnese: true,
-        profession: body.profissao?.trim() || null,
-      })
-      .select("id")
-      .single();
+    let patientId: string;
 
-    if (patientErr || !patient) {
-      return new Response(
-        JSON.stringify({ error: "Erro ao cadastrar paciente: " + (patientErr?.message ?? "desconhecido") }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (existingPatient) {
+      // Paciente já existe → reutiliza o ID
+      patientId = existingPatient.id;
+
+      // (Opcional) Você pode atualizar dados como nome, email, etc., se desejar
+      // Exemplo:
+      // await admin.from("patients").update({ name: body.nome.trim() }).eq("id", patientId);
+    } else {
+      // 2. Cria um novo paciente com o user_id fixo da nutricionista
+      const { data: newPatient, error: insertError } = await admin
+        .from("patients")
+        .insert({
+          user_id: NUTRITIONIST_USER_ID,
+          name: body.nome.trim(),
+          email: body.email?.trim() || null,
+          phone: body.whatsapp.trim(),
+          birth_date: body.nascimento,
+          gender: null,
+          objective: body.motivo.trim(),
+          health_history: body.patologia?.trim() || null,
+          allergies: body.alergia?.trim() || null,
+          medications: body.qualMedicamento?.trim() || null,
+          status: "active",
+          from_anamnese: true,
+          profession: body.profissao?.trim() || null,
+        })
+        .select("id")
+        .single();
+
+      if (insertError || !newPatient) {
+        return new Response(
+          JSON.stringify({ error: "Erro ao cadastrar paciente: " + (insertError?.message ?? "desconhecido") }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      patientId = newPatient.id;
     }
 
-    // Cria o registro de anamnese com os dados clínicos e de estilo de vida
+    // 3. Insere a anamnese vinculada ao patientId (seja existente ou novo)
     const anamneseRow = {
-      patient_id: patient.id,
+      patient_id: patientId,
       motivo_consulta: body.motivo?.trim() || null,
       acompanhamento_anterior: body.nutri || null,
       patologia: body.patologia?.trim() || null,
@@ -181,7 +189,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, patientId: patient.id }),
+      JSON.stringify({ success: true, patientId }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
