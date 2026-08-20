@@ -3,10 +3,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import WPLogo from '@/components/WPLogo';
 import {
   LayoutDashboard, Users, Calendar, ClipboardList,
-  Stethoscope, DollarSign, LogOut, Menu, X
+  Stethoscope, DollarSign, CreditCard, LogOut, Menu, X
 } from 'lucide-react';
 
-export type Page = 'dashboard' | 'patients' | 'appointments' | 'consultations' | 'doctors' | 'financeiro';
+export type Page = 'dashboard' | 'patients' | 'appointments' | 'consultations' | 'doctors' | 'financeiro' | 'contasapagar';
 
 type NavItem = { id: Page; label: string; icon: React.ElementType };
 
@@ -17,6 +17,7 @@ const navItems: NavItem[] = [
   { id: 'consultations', label: 'Consultas', icon: ClipboardList },
   { id: 'doctors', label: 'Médicos Referentes', icon: Stethoscope },
   { id: 'financeiro', label: 'Contas a Receber', icon: DollarSign },
+  { id: 'contasapagar', label: 'Contas a Pagar', icon: CreditCard },
 ];
 
 export default function Layout({ currentPage, onNavigate, children }: {

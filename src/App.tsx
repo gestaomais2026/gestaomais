@@ -10,6 +10,7 @@ import Appointments from '@/pages/Appointments';
 import Consultations from '@/pages/Consultations';
 import Doctors from '@/pages/Doctors';
 import Financeiro from '@/pages/Financeiro';
+import ContasAPagar from '@/pages/ContasAPagar';
 import { Loader2 } from 'lucide-react';
 
 function isAnamneseRoute() {
@@ -62,6 +63,7 @@ function AppContent() {
       {page === 'consultations' && <Consultations />}
       {page === 'doctors' && <Doctors />}
       {page === 'financeiro' && <Financeiro />}
+      {page === 'contasapagar' && <ContasAPagar />}
     </Layout>
   );
 }

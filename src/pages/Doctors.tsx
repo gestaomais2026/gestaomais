@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase, Doctor } from '@/lib/supabase';
-import { Plus, Edit2, Trash2, Phone, Mail, X, Stethoscope, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, Phone, Mail, X, Stethoscope, Search, MapPin } from 'lucide-react';
 
 const emptyForm: Partial<Doctor> = {
-  name: '', specialty: '', crm: '', email: '', phone: '', notes: '', status: 'active',
+  name: '', specialty: '', crm: '', cnpj: '', address: '', email: '', phone: '', notes: '', status: 'active',
 };
 
 export default function Doctors() {
@@ -45,11 +45,13 @@ export default function Doctors() {
       name: form.name,
       specialty: form.specialty || null,
       crm: form.crm || null,
+      cnpj: form.cnpj || null,
+      address: form.address || null,
       email: form.email || null,
       phone: form.phone || null,
       notes: form.notes || null,
       status: form.status || 'active',
-    };
+};
     if (editing) {
       await supabase.from('doctors').update(payload).eq('id', editing.id);
     } else {
@@ -120,10 +122,25 @@ export default function Doctors() {
                 </span>
               </div>
 
-              {d.crm && (
-                <p className="text-sm text-[#4F4E3A] bg-[#F5F2E8] rounded-lg px-3 py-2 mb-3">
-                  CRM: {d.crm}
-                </p>
+              {(d.crm || d.cnpj) && (
+                <div className="space-y-1.5 mb-3">
+                  {d.crm && (
+                    <p className="text-sm text-[#4F4E3A] bg-[#F5F2E8] rounded-lg px-3 py-2">
+                      CRM: {d.crm}
+                    </p>
+                  )}
+                  {d.cnpj && (
+                    <p className="text-sm text-[#4F4E3A] bg-[#F5F2E8] rounded-lg px-3 py-2">
+                      CNPJ: {d.cnpj}
+                    </p>
+                  )}
+                </div>
+              )}
+              {d.address && (
+                <div className="flex items-start gap-2 text-sm text-[#8C8B6E] mb-3">
+                  <MapPin size={14} className="mt-0.5 flex-shrink-0" />
+                  <span>{d.address}</span>
+                </div>
               )}
 
               <div className="space-y-1.5 text-sm text-[#8C8B6E] mb-4">
@@ -184,6 +201,10 @@ export default function Doctors() {
                   <input value={form.crm || ''} onChange={(e) => setForm({ ...form, crm: e.target.value })}
                     placeholder="Ex: 12345-SP" className={inputClass} />
                 </Field>
+                <Field label="CNPJ">
+                  <input value={form.cnpj || ''} onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
+                    placeholder="Ex: 12.345.678/0001-90" className={inputClass} />
+                </Field>
                 <Field label="Status">
                   <select value={form.status || 'active'} onChange={(e) => setForm({ ...form, status: e.target.value as Doctor['status'] })}
                     className={inputClass}>
@@ -200,6 +221,11 @@ export default function Doctors() {
                     className={inputClass} />
                 </Field>
               </div>
+
+              <Field label="Endereço">
+                <textarea rows={2} value={form.address || ''} onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  placeholder="Logradouro, número, complemento, bairro, cidade, UF, CEP" className={inputClass} />
+              </Field>
 
               <Field label="Observações">
                 <textarea rows={3} value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })}

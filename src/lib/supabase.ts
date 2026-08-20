@@ -21,10 +21,45 @@ export type Doctor = {
   name: string;
   specialty: string | null;
   crm: string | null;
+  cnpj: string | null;
+  address: string | null;
   email: string | null;
   phone: string | null;
   notes: string | null;
   status: 'active' | 'inactive';
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExpenseCategory = {
+  id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+};
+
+export type PayableEntry = {
+  id: string;
+  user_id: string;
+  description: string;
+  amount: number;
+  due_date: string;
+  paid_at: string | null;
+  status: 'aberto' | 'pago' | 'vencido';
+  classification: 'fixo' | 'variavel';
+  category_id: string | null;
+  bank_info: string | null;
+  month_year: string;
+  created_at: string;
+  updated_at: string;
+  category?: ExpenseCategory | null;
+};
+
+export type PayableMonthlyBalance = {
+  id: string;
+  user_id: string;
+  month_year: string;
+  opening_balance: number;
   created_at: string;
   updated_at: string;
 };
