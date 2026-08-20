@@ -286,9 +286,10 @@ export default function AnamnesePage() {
               <select value={corUrina} onChange={(e) => setCorUrina(e.target.value)} className={inputClass}>
                 <option value="">Selecione...</option>
                 {[
-                  '1-2 (amarelo claro / transparente)',
-                  '3-4 (amarelo médio)',
-                  '5-6 (amarelo escuro / âmbar)',
+                  '1-2 (bem hidratado)',
+                  '3-4 (levemente desidratado)',
+                  '5-6 (moderamente desidratado)',
+                  '7-8 (severamente desidratado)',
                 ].map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
             </Field>
