@@ -247,16 +247,30 @@ export default function AnamnesePage() {
             <Field label="Como está o funcionamento do seu intestino?">
               <input type="text" value={intestino} onChange={(e) => setIntestino(e.target.value)} className={inputClass} placeholder="Ex: 1x por dia, dias alternados, mais de 1x..." />
             </Field>
-            <SelectField label="Indique qual opção se assemelha mais a suas fezes" value={fezes} onChange={setFezes}
-              options={[
-                'Tipo 1 (pedaços duros e separados)',
-                'Tipo 2 (em forma de salsicha, mas grumosa)',
-                'Tipo 3 (em forma de salsicha, com rachaduras na superfície)',
-                'Tipo 4 (em forma de salsicha ou cobra, lisa e macia)',
-                'Tipo 5 (pedaços moles com bordas definidas)',
-                'Tipo 6 (pedaços pastosos e irregulares)',
-                'Tipo 7 (líquida, sem pedaços sólidos)',
-              ]} />
+            <Field label="Indique qual opção se assemelha mais a suas fezes">
+              <figure className="mb-3 overflow-hidden rounded-xl border border-[#E0D9C3] bg-[#FDFCF7]">
+                <img
+                  src="/image.png"
+                  alt="Escala ilustrativa dos tipos de fezes, do tipo 1 ao tipo 7"
+                  className="mx-auto h-auto max-h-80 w-full object-contain"
+                />
+                <figcaption className="px-3 py-2 text-center text-xs text-[#8C8B6E]">
+                  Consulte a imagem acima e selecione a opção mais parecida.
+                </figcaption>
+              </figure>
+              <select value={fezes} onChange={(e) => setFezes(e.target.value)} className={inputClass}>
+                <option value="">Selecione...</option>
+                {[
+                  'Tipo 1 (pedaços duros e separados)',
+                  'Tipo 2 (em forma de salsicha, mas grumosa)',
+                  'Tipo 3 (em forma de salsicha, com rachaduras na superfície)',
+                  'Tipo 4 (em forma de salsicha ou cobra, lisa e macia)',
+                  'Tipo 5 (pedaços moles com bordas definidas)',
+                  'Tipo 6 (pedaços pastosos e irregulares)',
+                  'Tipo 7 (líquida, sem pedaços sólidos)',
+                ].map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </Field>
             <RadioField label="Sente dificuldade para evacuar?" value={dificuldadeEvac} onChange={setDificuldadeEvac} />
             <SelectField label="Indique a opção que mais se assemelha a coloração da sua urina" value={corUrina} onChange={setCorUrina}
               options={[
