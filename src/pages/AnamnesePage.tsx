@@ -272,12 +272,26 @@ export default function AnamnesePage() {
               </select>
             </Field>
             <RadioField label="Sente dificuldade para evacuar?" value={dificuldadeEvac} onChange={setDificuldadeEvac} />
-            <SelectField label="Indique a opção que mais se assemelha a coloração da sua urina" value={corUrina} onChange={setCorUrina}
-              options={[
-                '1-2 (amarelo claro / transparente)',
-                '3-4 (amarelo médio)',
-                '5-6 (amarelo escuro / âmbar)',
-              ]} />
+            <Field label="Indique a opção que mais se assemelha a coloração da sua urina">
+              <figure className="mb-3 overflow-hidden rounded-xl border border-[#E0D9C3] bg-[#FDFCF7]">
+                <img
+                  src="/urine-scale.svg"
+                  alt="Escala de coloração da urina, do amarelo claro ao âmbar escuro"
+                  className="mx-auto h-auto max-h-96 w-full object-contain"
+                />
+                <figcaption className="px-3 py-2 text-center text-xs text-[#8C8B6E]">
+                  Consulte a imagem e selecione a opção mais parecida.
+                </figcaption>
+              </figure>
+              <select value={corUrina} onChange={(e) => setCorUrina(e.target.value)} className={inputClass}>
+                <option value="">Selecione...</option>
+                {[
+                  '1-2 (amarelo claro / transparente)',
+                  '3-4 (amarelo médio)',
+                  '5-6 (amarelo escuro / âmbar)',
+                ].map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </Field>
           </Section>
 
           {/* Avaliação Alimentar e Motivação */}
