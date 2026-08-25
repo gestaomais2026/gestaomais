@@ -122,8 +122,12 @@ export type Anamnese = {
   motivacao: number | null;
   exames_recentes: string | null;
   encaminhar_exames: string | null;
+  // NOVO CAMPO
+  indicado_por: string | null; // UUID do médico que indicou
   created_at: string;
   updated_at: string;
+  // Relacionamento opcional
+  medico_indicador?: Doctor;
 };
 
 export type Appointment = {
@@ -211,4 +215,53 @@ export type Payment = {
   created_at: string;
   updated_at: string;
   patient?: Patient;
+};
+
+// NOVO: Tipo para a resposta da Edge Function
+export type AnamneseResponse = {
+  success: boolean;
+  patientId: string;
+  indicadoPor: string | null;
+  message?: string;
+};
+
+// NOVO: Tipo para a requisição da Edge Function (payload)
+export type AnamnesePayload = {
+  nome: string;
+  nascimento: string;
+  profissao?: string;
+  whatsapp: string;
+  email?: string;
+  motivo: string;
+  nutri?: "Sim" | "Não";
+  patologia?: string;
+  familia?: string;
+  cirurgia?: "Sim" | "Não";
+  qualCirurgia?: string;
+  medicamento?: "Sim" | "Não";
+  qualMedicamento?: string;
+  queixas?: string[];
+  outrasQueixas?: string;
+  alergia?: string;
+  atividadeFisica?: string;
+  suplemento?: string;
+  agua?: string;
+  restricao?: string;
+  intolerancia?: string;
+  alcool?: string;
+  moradia?: string;
+  cozinhar?: "Sim" | "Não" | "Às vezes";
+  naoGosta?: string;
+  qualidadeSono?: string;
+  horasSono?: number;
+  intestino?: string;
+  fezes?: string;
+  dificuldadeEvac?: "Sim" | "Não";
+  corUrina?: string;
+  alimentacao?: string;
+  dificuldades?: string;
+  motivacao?: number;
+  exames?: "Sim" | "Não";
+  encaminharExames?: string;
+  indicadoPor?: string | null;
 };
