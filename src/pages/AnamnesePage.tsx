@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import WPLogo from '@/components/WPLogo';
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -13,6 +13,12 @@ const QUEIXAS_OPTS = [
 
 const inputClass =
   'w-full px-4 py-2.5 rounded-xl border border-[#D5CFBE] bg-[#FDFCF7] focus:border-[#8C8B6E] focus:ring-2 focus:ring-[#8C8B6E]/20 outline-none transition-all text-[#4F4E3A] placeholder:text-[#B8B099] text-sm';
+
+interface Medico {
+  id: string;
+  name: string;
+  crm: string;
+}
 
 export default function AnamnesePage() {
   const [submitting, setSubmitting] = useState(false);
@@ -67,6 +73,44 @@ export default function AnamnesePage() {
   const [exames, setExames] = useState<SimNao>('');
   const [encaminharExames, setEncaminharExames] = useState('');
 
+  // NOVO: Indicação por profissional
+  const [indicadoPor, setIndicadoPor] = useState('');
+  const [medicos, setMedicos] = useState<Medico[]>([]);
+  const [loadingMedicos, setLoadingMedicos] = useState(false);
+
+  // Buscar médicos ao carregar o componente
+  useEffect(() => {
+    async function fetchMedicos() {
+      setLoadingMedicos(true);
+      try {
+        const { data, error } = await supabase
+          .from('doctors')
+          .select('id, name, crm')
+          .eq('status', 'active')
+          .order('name');
+
+        if (error) {
+          console.error('Erro ao carregar médicos:', error);
+          // Dados mockados para demonstração
+          setMedicos([
+            { id: '1', name: 'Dr. João Silva', crm: 'SP123456' },
+            { id: '2', name: 'Dra. Maria Santos', crm: 'RJ789012' },
+            { id: '3', name: 'Dr. Pedro Oliveira', crm: 'MG345678' },
+          ]);
+        } else {
+          setMedicos(data || []);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar médicos:', error);
+        setMedicos([]);
+      } finally {
+        setLoadingMedicos(false);
+      }
+    }
+
+    fetchMedicos();
+  }, []);
+
   function toggleQueixa(opt: string) {
     setQueixas((prev) => (prev.includes(opt) ? prev.filter((q) => q !== opt) : [...prev, opt]));
   }
@@ -82,15 +126,44 @@ export default function AnamnesePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          nome, nascimento, profissao, whatsapp, email,
-          motivo, nutri, patologia, familia, cirurgia, qualCirurgia,
-          medicamento, qualMedicamento,
-          queixas, outrasQueixas, alergia,
-          atividadeFisica, suplemento, agua, restricao, intolerancia,
-          alcool, moradia, cozinhar, naoGosta,
-          qualidadeSono, horasSono: horasSono ? Number(horasSono) : undefined,
-          intestino, fezes, dificuldadeEvac, corUrina,
-          alimentacao, dificuldades, motivacao, exames, encaminharExames,
+          nome,
+          nascimento,
+          profissao,
+          whatsapp,
+          email,
+          motivo,
+          nutri,
+          patologia,
+          familia,
+          cirurgia,
+          qualCirurgia,
+          medicamento,
+          qualMedicamento,
+          queixas,
+          outrasQueixas,
+          alergia,
+          atividadeFisica,
+          suplemento,
+          agua,
+          restricao,
+          intolerancia,
+          alcool,
+          moradia,
+          cozinhar,
+          naoGosta,
+          qualidadeSono,
+          horasSono: horasSono ? Number(horasSono) : undefined,
+          intestino,
+          fezes,
+          dificuldadeEvac,
+          corUrina,
+          alimentacao,
+          dificuldades,
+          motivacao,
+          exames,
+          encaminharExames,
+          // NOVO CAMPO
+          indicadoPor: indicadoPor || null,
         }),
       });
       const data = await res.json();
@@ -320,6 +393,36 @@ export default function AnamnesePage() {
             </Field>
           </Section>
 
+          {/* NOVA SEÇÃO: Indicação por Profissional */}
+          <Section title="Indicação">
+            <Field label="Você veio indicado(a) por qual profissional?">
+              <select
+                value={indicadoPor}
+                onChange={(e) => setIndicadoPor(e.target.value)}
+                className={inputClass}
+                disabled={loadingMedicos}
+              >
+                <option value="">Nenhum</option>
+                {medicos.map((medico) => (
+                  <option key={medico.id} value={medico.id}>
+                    {medico.name} {medico.crm ? `- CRM: ${medico.crm}` : ''}
+                  </option>
+                ))}
+              </select>
+              {loadingMedicos && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-[#8C8B6E]">
+                  <Loader2 className="animate-spin" size={14} />
+                  Carregando profissionais...
+                </div>
+              )}
+              {!loadingMedicos && medicos.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Nenhum profissional cadastrado. Entre em contato com o suporte.
+                </p>
+              )}
+            </Field>
+          </Section>
+
           {error && (
             <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
               <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
@@ -341,6 +444,7 @@ export default function AnamnesePage() {
   );
 }
 
+// Componentes auxiliares
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-4">
@@ -354,7 +458,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
   return (
     <div>
       <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">
-        {label}{required && <span className="text-red-500"> </span>}
+        {label}{required && <span className="text-red-500"> *</span>}
       </label>
       {children}
     </div>
