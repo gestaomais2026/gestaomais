@@ -46,6 +46,8 @@ interface AnamnesePayload {
   motivacao?: number;
   exames?: "Sim" | "Não";
   encaminharExames?: string;
+  // NOVO CAMPO
+  indicadoPor?: string | null; // UUID do médico ou null
 }
 
 Deno.serve(async (req: Request) => {
@@ -107,9 +109,29 @@ Deno.serve(async (req: Request) => {
       // Paciente já existe → reutiliza o ID
       patientId = existingPatient.id;
 
-      // (Opcional) Você pode atualizar dados como nome, email, etc., se desejar
-      // Exemplo:
-      // await admin.from("patients").update({ name: body.nome.trim() }).eq("id", patientId);
+      // Atualiza dados do paciente (opcional)
+      const updateData: any = {
+        name: body.nome.trim(),
+        updated_at: new Date().toISOString(),
+      };
+      
+      if (body.email) updateData.email = body.email.trim();
+      if (body.profissao) updateData.profession = body.profissao.trim();
+      if (body.nascimento) updateData.birth_date = body.nascimento;
+      if (body.motivo) updateData.objective = body.motivo.trim();
+      if (body.patologia) updateData.health_history = body.patologia.trim();
+      if (body.alergia) updateData.allergies = body.alergia.trim();
+      if (body.qualMedicamento) updateData.medications = body.qualMedicamento.trim();
+
+      const { error: updateError } = await admin
+        .from("patients")
+        .update(updateData)
+        .eq("id", patientId);
+
+      if (updateError) {
+        console.error("Erro ao atualizar paciente:", updateError);
+        // Não interrompe o fluxo, apenas loga o erro
+      }
     } else {
       // 2. Cria um novo paciente com o user_id fixo da nutricionista
       const { data: newPatient, error: insertError } = await admin
@@ -141,7 +163,29 @@ Deno.serve(async (req: Request) => {
       patientId = newPatient.id;
     }
 
-    // 3. Insere a anamnese vinculada ao patientId (seja existente ou novo)
+    // 3. Verifica se o médico indicado existe (se foi fornecido)
+    let medicoValido = null;
+    if (body.indicadoPor && body.indicadoPor.trim() !== '') {
+      const { data: medico, error: medicoError } = await admin
+        .from("doctors")
+        .select("id")
+        .eq("id", body.indicadoPor)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (medicoError) {
+        console.error("Erro ao verificar médico:", medicoError);
+      }
+
+      if (medico) {
+        medicoValido = medico.id;
+      } else {
+        console.warn(`Médico com ID ${body.indicadoPor} não encontrado ou inativo`);
+        // Não interrompe o fluxo, apenas ignora a indicação
+      }
+    }
+
+    // 4. Insere a anamnese vinculada ao patientId
     const anamneseRow = {
       patient_id: patientId,
       motivo_consulta: body.motivo?.trim() || null,
@@ -175,6 +219,8 @@ Deno.serve(async (req: Request) => {
       motivacao: body.motivacao ?? null,
       exames_recentes: body.exames || null,
       encaminhar_exames: body.encaminharExames?.trim() || null,
+      // NOVO CAMPO: indicação por médico
+      indicado_por: medicoValido,
     };
 
     const { error: anamneseErr } = await admin
@@ -189,7 +235,11 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, patientId }),
+      JSON.stringify({ 
+        success: true, 
+        patientId,
+        indicadoPor: medicoValido || null 
+      }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
