@@ -4,6 +4,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Max-Age": "86400", // Cache de 24 horas para preflight
 };
 
 // 🔥 UUID do perfil da nutricionista (sistema) – fornecido por você
@@ -46,19 +47,27 @@ interface AnamnesePayload {
   motivacao?: number;
   exames?: "Sim" | "Não";
   encaminharExames?: string;
-  // NOVO CAMPO
-  indicadoPor?: string | null; // UUID do médico ou null
+  indicadoPor?: string | null;
 }
 
 Deno.serve(async (req: Request) => {
+  // 🚀 TRATAMENTO CORS - SEMPRE RETORNAR 200 PARA OPTIONS
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Método não permitido" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(null, {
+      status: 204, // 204 No Content é mais apropriado para OPTIONS
+      headers: corsHeaders,
     });
+  }
+
+  // Verificar método
+  if (req.method !== "POST") {
+    return new Response(
+      JSON.stringify({ error: "Método não permitido" }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 
   try {
@@ -70,7 +79,10 @@ Deno.serve(async (req: Request) => {
       if (!body[key] || String(body[key]).trim() === "") {
         return new Response(
           JSON.stringify({ error: `Campo obrigatório ausente: ${key}` }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
         );
       }
     }
@@ -81,7 +93,10 @@ Deno.serve(async (req: Request) => {
     if (!supabaseUrl || !serviceRoleKey) {
       return new Response(
         JSON.stringify({ error: "Configuração do servidor ausente" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
       );
     }
 
@@ -99,7 +114,10 @@ Deno.serve(async (req: Request) => {
     if (findError) {
       return new Response(
         JSON.stringify({ error: "Erro ao buscar paciente: " + findError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
       );
     }
 
@@ -109,7 +127,7 @@ Deno.serve(async (req: Request) => {
       // Paciente já existe → reutiliza o ID
       patientId = existingPatient.id;
 
-      // Atualiza dados do paciente (opcional)
+      // Atualiza dados do paciente
       const updateData: any = {
         name: body.nome.trim(),
         updated_at: new Date().toISOString(),
@@ -130,7 +148,6 @@ Deno.serve(async (req: Request) => {
 
       if (updateError) {
         console.error("Erro ao atualizar paciente:", updateError);
-        // Não interrompe o fluxo, apenas loga o erro
       }
     } else {
       // 2. Cria um novo paciente com o user_id fixo da nutricionista
@@ -156,16 +173,21 @@ Deno.serve(async (req: Request) => {
 
       if (insertError || !newPatient) {
         return new Response(
-          JSON.stringify({ error: "Erro ao cadastrar paciente: " + (insertError?.message ?? "desconhecido") }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({
+            error: "Erro ao cadastrar paciente: " + (insertError?.message ?? "desconhecido"),
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
         );
       }
       patientId = newPatient.id;
     }
 
-    // 3. Verifica se o médico indicado existe (se foi fornecido)
+    // 3. Verifica se o médico indicado existe
     let medicoValido = null;
-    if (body.indicadoPor && body.indicadoPor.trim() !== '') {
+    if (body.indicadoPor && body.indicadoPor.trim() !== "") {
       const { data: medico, error: medicoError } = await admin
         .from("doctors")
         .select("id")
@@ -181,11 +203,10 @@ Deno.serve(async (req: Request) => {
         medicoValido = medico.id;
       } else {
         console.warn(`Médico com ID ${body.indicadoPor} não encontrado ou inativo`);
-        // Não interrompe o fluxo, apenas ignora a indicação
       }
     }
 
-    // 4. Insere a anamnese vinculada ao patientId
+    // 4. Insere a anamnese
     const anamneseRow = {
       patient_id: patientId,
       motivo_consulta: body.motivo?.trim() || null,
@@ -219,7 +240,6 @@ Deno.serve(async (req: Request) => {
       motivacao: body.motivacao ?? null,
       exames_recentes: body.exames || null,
       encaminhar_exames: body.encaminharExames?.trim() || null,
-      // NOVO CAMPO: indicação por médico
       indicado_por: medicoValido,
     };
 
@@ -229,23 +249,34 @@ Deno.serve(async (req: Request) => {
 
     if (anamneseErr) {
       return new Response(
-        JSON.stringify({ error: "Paciente criado, mas erro ao salvar anamnese: " + anamneseErr.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: "Paciente criado, mas erro ao salvar anamnese: " + anamneseErr.message,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
       );
     }
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
         patientId,
-        indicadoPor: medicoValido || null 
+        indicadoPor: medicoValido || null,
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
   } catch (err) {
     return new Response(
       JSON.stringify({ error: (err as Error).message || "Erro interno do servidor" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
   }
 });
