@@ -125,26 +125,27 @@ export default function Patients() {
           <p className="text-[#B8B099] text-sm mt-1">Clique em "Novo Paciente" para começar</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {patients.map((p) => {
             const age = calcAge(p.birth_date);
             const bmi = calcBMI(p.weight_kg, p.height_cm);
             return (
               <div
                 key={p.id}
-                className="bg-white rounded-2xl shadow-sm border border-[#E0D9C3] p-5 hover:shadow-md transition-all group"
+                className="bg-white rounded-xl shadow-sm border border-[#E0D9C3] p-3 hover:shadow-md transition-all group"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#C4A77D] to-[#8C8B6E] flex items-center justify-center text-white font-bold text-lg">
+                {/* Header: avatar + name + status */}
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 flex-shrink-0 rounded-full bg-gradient-to-br from-[#C4A77D] to-[#8C8B6E] flex items-center justify-center text-white font-bold text-xs">
                       {p.name.charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <h3 className="font-serif font-bold text-[#4F4E3A] leading-tight">{p.name}</h3>
-                      {age !== null && <p className="text-xs text-[#8C8B6E]">{age} anos</p>}
+                    <div className="min-w-0">
+                      <h3 className="font-serif font-bold text-[#4F4E3A] text-sm leading-tight truncate">{p.name}</h3>
+                      {age !== null && <p className="text-[11px] text-[#8C8B6E]">{age} anos</p>}
                     </div>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium flex-shrink-0
                     ${p.status === 'active' ? 'bg-green-100 text-green-700' :
                       p.status === 'paused' ? 'bg-amber-100 text-amber-700' :
                       'bg-gray-100 text-gray-600'}`}>
@@ -152,70 +153,68 @@ export default function Patients() {
                   </span>
                 </div>
 
+                {/* Badges row: doctor / anamnese, only if present */}
+                {(p.doctor || p.from_anamnese) && (
+                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                    {p.doctor && (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-[#4F6B3E] bg-[#6B8E5A]/10 px-2 py-0.5 rounded-md truncate max-w-full">
+                        <Stethoscope size={11} className="flex-shrink-0" />
+                        <span className="truncate">{p.doctor.name}</span>
+                      </span>
+                    )}
+                    {p.from_anamnese && (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-[#4F6B3E] bg-[#6B8E5A]/10 px-2 py-0.5 rounded-md">
+                        <ClipboardList size={11} /> Anamnese
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {p.objective && (
-                  <p className="text-sm text-[#4F4E3A] bg-[#F5F2E8] rounded-lg px-3 py-2 mb-3 line-clamp-2">
+                  <p className="text-xs text-[#4F4E3A] bg-[#F5F2E8] rounded-md px-2 py-1 mb-2 truncate">
                     🎯 {p.objective}
                   </p>
                 )}
 
-                {p.from_anamnese && (
-                  <div className="inline-flex items-center gap-1 text-xs bg-[#6B8E5A]/10 text-[#4F6B3E] px-2.5 py-1 rounded-lg mb-3">
-                    <ClipboardList size={12} /> Cadastro via anamnese
+                {/* Peso / Altura / IMC on one compact line */}
+                <div className="flex items-center justify-between text-[11px] text-[#8C8B6E] bg-[#F5F2E8] rounded-md px-2 py-1 mb-2">
+                  <span>Peso <b className="text-[#4F4E3A]">{p.weight_kg ? `${p.weight_kg}kg` : '-'}</b></span>
+                  <span>Altura <b className="text-[#4F4E3A]">{p.height_cm ? `${p.height_cm}cm` : '-'}</b></span>
+                  <span>IMC <b className="text-[#4F4E3A]">{bmi || '-'}</b></span>
+                </div>
+
+                {/* Contact, single line, only if present */}
+                {(p.phone || p.email) && (
+                  <div className="flex items-center gap-3 text-[11px] text-[#8C8B6E] mb-2 truncate">
+                    {p.phone && (
+                      <span className="flex items-center gap-1 flex-shrink-0">
+                        <Phone size={12} /> {p.phone}
+                      </span>
+                    )}
+                    {p.email && (
+                      <span className="flex items-center gap-1 truncate min-w-0">
+                        <Mail size={12} className="flex-shrink-0" /> <span className="truncate">{p.email}</span>
+                      </span>
+                    )}
                   </div>
                 )}
 
-                {p.doctor && (
-                  <div className="flex items-center gap-2 text-sm text-[#4F4E3A] bg-gradient-to-r from-[#6B8E5A]/10 to-[#4F6B3E]/10 rounded-lg px-3 py-2 mb-3">
-                    <Stethoscope size={14} className="text-[#6B8E5A]" />
-                    <span className="font-medium">{p.doctor.name}</span>
-                    {p.doctor.specialty && <span className="text-[#8C8B6E] text-xs">· {p.doctor.specialty}</span>}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-3 gap-2 text-center mb-3">
-                  <div className="bg-[#F5F2E8] rounded-lg py-2">
-                    <p className="text-xs text-[#8C8B6E]">Peso</p>
-                    <p className="text-sm font-bold text-[#4F4E3A]">{p.weight_kg ? `${p.weight_kg}kg` : '-'}</p>
-                  </div>
-                  <div className="bg-[#F5F2E8] rounded-lg py-2">
-                    <p className="text-xs text-[#8C8B6E]">Altura</p>
-                    <p className="text-sm font-bold text-[#4F4E3A]">{p.height_cm ? `${p.height_cm}cm` : '-'}</p>
-                  </div>
-                  <div className="bg-[#F5F2E8] rounded-lg py-2">
-                    <p className="text-xs text-[#8C8B6E]">IMC</p>
-                    <p className="text-sm font-bold text-[#4F4E3A]">{bmi || '-'}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 text-sm text-[#8C8B6E] mb-4">
-                  {p.phone && (
-                    <div className="flex items-center gap-2">
-                      <Phone size={14} /> {p.phone}
-                    </div>
-                  )}
-                  {p.email && (
-                    <div className="flex items-center gap-2 truncate">
-                      <Mail size={14} /> <span className="truncate">{p.email}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mb-3">
+                <div className="mb-2">
                   <AnamneseViewer patientId={p.id} patientName={p.name} trigger="badge" />
                 </div>
 
-                <div className="flex gap-2 pt-3 border-t border-[#E0D9C3]">
+                <div className="flex gap-1.5 pt-2 border-t border-[#E0D9C3]">
                   <button
                     onClick={() => openEdit(p)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#F5F2E8] text-[#4F4E3A] text-sm font-medium hover:bg-[#EDE8D9] transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-[#F5F2E8] text-[#4F4E3A] text-xs font-medium hover:bg-[#EDE8D9] transition-colors"
                   >
-                    <Edit2 size={16} /> Editar
+                    <Edit2 size={13} /> Editar
                   </button>
                   <button
                     onClick={() => remove(p.id)}
-                    className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 transition-colors"
+                    className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100 transition-colors"
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
