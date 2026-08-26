@@ -31,7 +31,7 @@ export default function AnamneseViewer({ patientId, patientName, trigger }: {
   if (trigger === 'badge') {
     return (
       <>
-        <button onClick={load}
+        <button type="button" onClick={load}
           className="inline-flex items-center gap-1.5 text-xs bg-[#6B8E5A]/10 text-[#4F6B3E] px-2.5 py-1 rounded-lg hover:bg-[#6B8E5A]/20 transition-colors">
           <ClipboardList size={12} /> Ver anamnese
         </button>
@@ -42,7 +42,7 @@ export default function AnamneseViewer({ patientId, patientName, trigger }: {
 
   return (
     <>
-      <button onClick={load}
+      <button type="button" onClick={load}
         className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#F5F2E8] text-[#4F4E3A] text-sm font-medium hover:bg-[#EDE8D9] transition-colors">
         <FileText size={16} /> Anamnese
       </button>
@@ -64,7 +64,7 @@ export default function AnamneseViewer({ patientId, patientName, trigger }: {
                 <p className="text-xs text-[#8C8B6E]">Formulário preenchido pelo paciente</p>
               </div>
             </div>
-            <button onClick={() => setOpen(false)} className="text-[#8C8B6E] hover:text-[#4F4E3A] flex-shrink-0">
+            <button type="button" onClick={() => setOpen(false)} className="text-[#8C8B6E] hover:text-[#4F4E3A] flex-shrink-0">
               <X size={22} />
             </button>
           </div>
@@ -144,7 +144,7 @@ export default function AnamneseViewer({ patientId, patientName, trigger }: {
           </div>
 
           <div className="p-6 pt-0">
-            <button onClick={() => setOpen(false)}
+            <button type="button" onClick={() => setOpen(false)}
               className="w-full py-3 rounded-xl bg-[#F5F2E8] text-[#4F4E3A] font-medium hover:bg-[#EDE8D9] transition-colors">
               Fechar
             </button>
