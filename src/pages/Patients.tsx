@@ -1,7 +1,12 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, Patient, Doctor } from '@/lib/supabase';
 import AnamneseViewer from '@/components/AnamneseViewer';
-import { Search, Plus, CreditCard as Edit2, Trash2, Phone, Mail, X, UserPlus, Stethoscope, ClipboardList } from 'lucide-react';
+import {
+  Search, CreditCard as Edit2, Trash2, Phone, Mail, X, UserPlus,
+  Stethoscope, ClipboardList, ChevronDown, ChevronLeft, ChevronRight,
+} from 'lucide-react';
+
+const PAGE_SIZE = 20;
 
 const emptyForm: Partial<Patient> = {
   name: '', email: '', phone: '', birth_date: '', gender: 'female',
@@ -11,26 +16,58 @@ const emptyForm: Partial<Patient> = {
 
 export default function Patients() {
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [search, setSearch] = useState('');
+
+  const [searchInput, setSearchInput] = useState('');   // valor do input (imediato)
+  const [search, setSearch] = useState('');              // valor usado na query (com debounce)
+  const [page, setPage] = useState(0);                   // página atual (0-based)
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Patient | null>(null);
   const [form, setForm] = useState<Partial<Patient>>(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  // Debounce: só atualiza `search` (e dispara query) 350ms após parar de digitar
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPage(0); // toda nova busca volta pra primeira página
+      setSearch(searchInput);
+    }, 350);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchInput]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    let q = supabase.from('patients').select('*, doctor:doctors(*)').order('name', { ascending: true });
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let q = supabase
+      .from('patients')
+      .select('*, doctor:doctors(*)', { count: 'exact' })
+      .order('name', { ascending: true })
+      .range(from, to);
+
     if (search) q = q.ilike('name', `%${search}%`);
-    const { data } = await q;
+
+    const { data, count } = await q;
     setPatients((data as Patient[]) || []);
-    const { data: dData } = await supabase.from('doctors').select('*').order('name');
-    setDoctors((dData as Doctor[]) || []);
+    setTotalCount(count || 0);
     setLoading(false);
-  }, [search]);
+  }, [search, page]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Doutores só precisam ser carregados uma vez (usados no formulário)
+  useEffect(() => {
+    supabase.from('doctors').select('*').order('name').then(({ data }) => {
+      setDoctors((data as Doctor[]) || []);
+    });
+  }, []);
 
   function openNew() {
     setEditing(null);
@@ -77,6 +114,7 @@ export default function Patients() {
   async function remove(id: string) {
     if (!confirm('Deseja realmente excluir este paciente?')) return;
     await supabase.from('patients').delete().eq('id', id);
+    if (expandedId === id) setExpandedId(null);
     load();
   }
 
@@ -91,16 +129,20 @@ export default function Patients() {
     return (w / Math.pow(h / 100, 2)).toFixed(1);
   }
 
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const rangeStart = totalCount === 0 ? 0 : page * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(totalCount, (page + 1) * PAGE_SIZE);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8C8B6E]" size={20} />
           <input
             type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Buscar paciente por nome..."
             className="w-full pl-12 pr-4 py-3 rounded-xl border border-[#D5CFBE] bg-white focus:border-[#8C8B6E] focus:ring-2 focus:ring-[#8C8B6E]/20 outline-none transition-all text-[#4F4E3A] placeholder:text-[#B8B099]"
           />
@@ -114,112 +156,189 @@ export default function Patients() {
         </button>
       </div>
 
-      {/* List */}
+      {/* Contador de resultados */}
+      {!loading && totalCount > 0 && (
+        <p className="text-xs text-[#8C8B6E]">
+          Mostrando {rangeStart}–{rangeEnd} de {totalCount} pacientes
+        </p>
+      )}
+
+      {/* Lista */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin w-10 h-10 border-3 border-[#4F4E3A] border-t-transparent rounded-full" />
         </div>
       ) : patients.length === 0 ? (
         <div className="bg-white rounded-2xl border border-[#E0D9C3] p-12 text-center">
-          <p className="text-[#8C8B6E] text-lg">Nenhum paciente cadastrado</p>
-          <p className="text-[#B8B099] text-sm mt-1">Clique em "Novo Paciente" para começar</p>
+          <p className="text-[#8C8B6E] text-lg">Nenhum paciente encontrado</p>
+          <p className="text-[#B8B099] text-sm mt-1">
+            {search ? 'Tente outro termo de busca' : 'Clique em "Novo Paciente" para começar'}
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {patients.map((p) => {
-            const age = calcAge(p.birth_date);
-            const bmi = calcBMI(p.weight_kg, p.height_cm);
-            return (
-              <div
-                key={p.id}
-                className="bg-white rounded-xl shadow-sm border border-[#E0D9C3] p-3 hover:shadow-md transition-all group"
-              >
-                {/* Header: avatar + name + status */}
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 flex-shrink-0 rounded-full bg-gradient-to-br from-[#C4A77D] to-[#8C8B6E] flex items-center justify-center text-white font-bold text-xs">
-                      {p.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-serif font-bold text-[#4F4E3A] text-sm leading-tight truncate">{p.name}</h3>
-                      {age !== null && <p className="text-[11px] text-[#8C8B6E]">{age} anos</p>}
-                    </div>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium flex-shrink-0
-                    ${p.status === 'active' ? 'bg-green-100 text-green-700' :
-                      p.status === 'paused' ? 'bg-amber-100 text-amber-700' :
-                      'bg-gray-100 text-gray-600'}`}>
-                    {p.status === 'active' ? 'Ativo' : p.status === 'paused' ? 'Pausado' : 'Inativo'}
-                  </span>
-                </div>
+        <div className="bg-white rounded-2xl border border-[#E0D9C3] overflow-hidden">
+          {/* Cabeçalho (só em telas maiores) */}
+          <div className="hidden md:grid grid-cols-[1fr_70px_110px_140px_90px_90px] gap-3 px-4 py-2 bg-[#F5F2E8] text-[11px] font-medium text-[#8C8B6E] uppercase tracking-wide">
+            <span>Paciente</span>
+            <span>Idade</span>
+            <span>Status</span>
+            <span>Médico</span>
+            <span>IMC</span>
+            <span className="text-right">Ações</span>
+          </div>
 
-                {/* Badges row: doctor / anamnese, only if present */}
-                {(p.doctor || p.from_anamnese) && (
-                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                    {p.doctor && (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-[#4F6B3E] bg-[#6B8E5A]/10 px-2 py-0.5 rounded-md truncate max-w-full">
-                        <Stethoscope size={11} className="flex-shrink-0" />
-                        <span className="truncate">{p.doctor.name}</span>
-                      </span>
-                    )}
-                    {p.from_anamnese && (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-[#4F6B3E] bg-[#6B8E5A]/10 px-2 py-0.5 rounded-md">
-                        <ClipboardList size={11} /> Anamnese
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {p.objective && (
-                  <p className="text-xs text-[#4F4E3A] bg-[#F5F2E8] rounded-md px-2 py-1 mb-2 truncate">
-                    🎯 {p.objective}
-                  </p>
-                )}
-
-                {/* Peso / Altura / IMC on one compact line */}
-                <div className="flex items-center justify-between text-[11px] text-[#8C8B6E] bg-[#F5F2E8] rounded-md px-2 py-1 mb-2">
-                  <span>Peso <b className="text-[#4F4E3A]">{p.weight_kg ? `${p.weight_kg}kg` : '-'}</b></span>
-                  <span>Altura <b className="text-[#4F4E3A]">{p.height_cm ? `${p.height_cm}cm` : '-'}</b></span>
-                  <span>IMC <b className="text-[#4F4E3A]">{bmi || '-'}</b></span>
-                </div>
-
-                {/* Contact, single line, only if present */}
-                {(p.phone || p.email) && (
-                  <div className="flex items-center gap-3 text-[11px] text-[#8C8B6E] mb-2 truncate">
-                    {p.phone && (
-                      <span className="flex items-center gap-1 flex-shrink-0">
-                        <Phone size={12} /> {p.phone}
-                      </span>
-                    )}
-                    {p.email && (
-                      <span className="flex items-center gap-1 truncate min-w-0">
-                        <Mail size={12} className="flex-shrink-0" /> <span className="truncate">{p.email}</span>
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                <div className="mb-2">
-                  <AnamneseViewer patientId={p.id} patientName={p.name} trigger="badge" />
-                </div>
-
-                <div className="flex gap-1.5 pt-2 border-t border-[#E0D9C3]">
+          <div className="divide-y divide-[#E0D9C3]">
+            {patients.map((p) => {
+              const age = calcAge(p.birth_date);
+              const bmi = calcBMI(p.weight_kg, p.height_cm);
+              const isExpanded = expandedId === p.id;
+              return (
+                <div key={p.id}>
+                  {/* Linha compacta — clicável */}
                   <button
-                    onClick={() => openEdit(p)}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-[#F5F2E8] text-[#4F4E3A] text-xs font-medium hover:bg-[#EDE8D9] transition-colors"
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                    className="w-full grid grid-cols-[1fr_auto] md:grid-cols-[1fr_70px_110px_140px_90px_90px] gap-3 items-center px-4 py-3 text-left hover:bg-[#F5F2E8]/60 transition-colors"
                   >
-                    <Edit2 size={13} /> Editar
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ChevronDown
+                        size={16}
+                        className={`flex-shrink-0 text-[#8C8B6E] transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                      />
+                      <div className="w-8 h-8 flex-shrink-0 rounded-full bg-gradient-to-br from-[#C4A77D] to-[#8C8B6E] flex items-center justify-center text-white font-bold text-xs">
+                        {p.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-serif font-bold text-[#4F4E3A] text-sm truncate">{p.name}</p>
+                        <p className="text-[11px] text-[#8C8B6E] md:hidden">
+                          {age !== null ? `${age} anos` : ''}
+                          {p.doctor ? ` · ${p.doctor.name}` : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="hidden md:block text-sm text-[#4F4E3A]">{age !== null ? `${age} anos` : '-'}</span>
+
+                    <span className="hidden md:block">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium
+                        ${p.status === 'active' ? 'bg-green-100 text-green-700' :
+                          p.status === 'paused' ? 'bg-amber-100 text-amber-700' :
+                          'bg-gray-100 text-gray-600'}`}>
+                        {p.status === 'active' ? 'Ativo' : p.status === 'paused' ? 'Pausado' : 'Inativo'}
+                      </span>
+                    </span>
+
+                    <span className="hidden md:block text-sm text-[#4F4E3A] truncate">{p.doctor?.name || '-'}</span>
+                    <span className="hidden md:block text-sm text-[#4F4E3A]">{bmi || '-'}</span>
+
+                    <span className="hidden md:flex justify-end">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium md:hidden
+                        ${p.status === 'active' ? 'bg-green-100 text-green-700' : ''}`} />
+                    </span>
                   </button>
-                  <button
-                    onClick={() => remove(p.id)}
-                    className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100 transition-colors"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+
+                  {/* Detalhes expandidos */}
+                  {isExpanded && (
+                    <div className="px-4 pb-4 pt-1 bg-[#FAF8F1] border-t border-[#E0D9C3]">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                        <div className="bg-white rounded-lg px-3 py-2 border border-[#E0D9C3]">
+                          <p className="text-[11px] text-[#8C8B6E]">Peso</p>
+                          <p className="text-sm font-bold text-[#4F4E3A]">{p.weight_kg ? `${p.weight_kg}kg` : '-'}</p>
+                        </div>
+                        <div className="bg-white rounded-lg px-3 py-2 border border-[#E0D9C3]">
+                          <p className="text-[11px] text-[#8C8B6E]">Altura</p>
+                          <p className="text-sm font-bold text-[#4F4E3A]">{p.height_cm ? `${p.height_cm}cm` : '-'}</p>
+                        </div>
+                        <div className="bg-white rounded-lg px-3 py-2 border border-[#E0D9C3]">
+                          <p className="text-[11px] text-[#8C8B6E]">IMC</p>
+                          <p className="text-sm font-bold text-[#4F4E3A]">{bmi || '-'}</p>
+                        </div>
+                      </div>
+
+                      {p.objective && (
+                        <p className="text-sm text-[#4F4E3A] bg-white border border-[#E0D9C3] rounded-lg px-3 py-2 mb-3">
+                          🎯 {p.objective}
+                        </p>
+                      )}
+
+                      {(p.phone || p.email) && (
+                        <div className="flex flex-wrap gap-4 text-sm text-[#8C8B6E] mb-3">
+                          {p.phone && <span className="flex items-center gap-1.5"><Phone size={14} /> {p.phone}</span>}
+                          {p.email && <span className="flex items-center gap-1.5"><Mail size={14} /> {p.email}</span>}
+                        </div>
+                      )}
+
+                      {(p.allergies || p.medications) && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 text-sm">
+                          {p.allergies && (
+                            <div>
+                              <p className="text-[11px] text-[#8C8B6E] uppercase">Alergias</p>
+                              <p className="text-[#4F4E3A]">{p.allergies}</p>
+                            </div>
+                          )}
+                          {p.medications && (
+                            <div>
+                              <p className="text-[11px] text-[#8C8B6E] uppercase">Medicamentos</p>
+                              <p className="text-[#4F4E3A]">{p.medications}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {p.health_history && (
+                        <div className="mb-3 text-sm">
+                          <p className="text-[11px] text-[#8C8B6E] uppercase">Histórico de saúde</p>
+                          <p className="text-[#4F4E3A]">{p.health_history}</p>
+                        </div>
+                      )}
+
+                      <div className="mb-3">
+                        <AnamneseViewer patientId={p.id} patientName={p.name} trigger="badge" />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openEdit(p); }}
+                          className="flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg bg-[#4F4E3A] text-white text-sm font-medium hover:bg-[#3D3C2A] transition-colors"
+                        >
+                          <Edit2 size={14} /> Editar
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); remove(p.id); }}
+                          className="flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 transition-colors"
+                        >
+                          <Trash2 size={14} /> Excluir
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Paginação */}
+      {!loading && totalCount > PAGE_SIZE && (
+        <div className="flex items-center justify-between px-1">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium text-[#4F4E3A] bg-white border border-[#E0D9C3] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#F5F2E8]"
+          >
+            <ChevronLeft size={16} /> Anterior
+          </button>
+          <span className="text-xs text-[#8C8B6E]">
+            Página {page + 1} de {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1}
+            className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium text-[#4F4E3A] bg-white border border-[#E0D9C3] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#F5F2E8]"
+          >
+            Próxima <ChevronRight size={16} />
+          </button>
         </div>
       )}
 
