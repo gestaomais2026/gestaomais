@@ -6,7 +6,7 @@ import jsPDF from 'jspdf';
 
 // npm install jspdf
 
-// ---------- Tipos locais (ver migration_consultations_prontuario.sql) ----------
+// ---------- Tipos locais ----------
 
 interface ConsultationRow {
   id: string;
@@ -15,8 +15,8 @@ interface ConsultationRow {
   consultation_date: string;
   clinical_conditions: string | null;
   medication: string | null;
-  notes: string | null;           // Observações (Nutricionista)
-  psych_notes: string | null;     // Observações (Psicóloga)
+  notes: string | null;
+  psych_notes: string | null;
   recommendations: string | null;
   next_consultation_date: string | null;
   patient?: (Patient & { doctor?: Doctor | null }) | null;
@@ -57,8 +57,47 @@ const emptyForm = {
   next_consultation_date: '',
 };
 
+// 🔥 CORREÇÃO: Função de formatação de data com fuso horário
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+  if (!d) return '';
+  const date = new Date(d + 'T00:00:00'); // 🔥 Força o fuso horário local
+  return date.toLocaleDateString('pt-BR', { 
+    day: 'numeric', 
+    month: 'long', 
+    year: 'numeric',
+    timeZone: 'UTC' // 🔥 Garante que não haja deslocamento
+  });
+}
+
+// 🔥 CORREÇÃO: Função para formatar data curta
+function fmtShortDate(d: string) {
+  if (!d) return '';
+  const date = new Date(d + 'T00:00:00');
+  return date.toLocaleDateString('pt-BR', { 
+    day: '2-digit', 
+    month: 'short',
+    timeZone: 'UTC'
+  });
+}
+
+// 🔥 CORREÇÃO: Função para obter o mês/ano de uma data
+function getMonthKey(d: string) {
+  if (!d) return '';
+  const date = new Date(d + 'T00:00:00');
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+// 🔥 CORREÇÃO: Função para formatar mês/ano
+function formatMonthLabel(d: string) {
+  if (!d) return '';
+  const date = new Date(d + '-01T00:00:00');
+  return date.toLocaleDateString('pt-BR', { 
+    month: 'long', 
+    year: 'numeric',
+    timeZone: 'UTC'
+  });
 }
 
 export default function Consultations() {
@@ -112,7 +151,7 @@ export default function Consultations() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Plano de acompanhamento do paciente selecionado (contexto no topo da lista)
+  // Plano de acompanhamento do paciente selecionado
   useEffect(() => {
     let active = true;
     async function fetchPlan() {
@@ -146,18 +185,17 @@ export default function Consultations() {
     });
   }, [consultations, selectedPatient, doctorFilter, dateFrom, dateTo]);
 
-  // Contagem total de consultas por paciente (indica "já tem histórico")
   const patientHistoryCount = useMemo(() => {
     const map = new Map<string, number>();
     for (const c of consultations) map.set(c.patient_id, (map.get(c.patient_id) || 0) + 1);
     return map;
   }, [consultations]);
 
-  // Agrupamento por mês — cada mês com sua própria seção
+  // 🔥 CORREÇÃO: Agrupamento por mês usando a nova função
   const monthGroups = useMemo(() => {
     const map = new Map<string, ConsultationRow[]>();
     for (const c of filtered) {
-      const key = c.consultation_date.slice(0, 7); // YYYY-MM
+      const key = getMonthKey(c.consultation_date);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(c);
     }
@@ -165,7 +203,7 @@ export default function Consultations() {
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([key, items]) => ({
         key,
-        label: new Date(`${key}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+        label: formatMonthLabel(key),
         items: items.slice().sort((a, b) => b.consultation_date.localeCompare(a.consultation_date)),
       }));
   }, [filtered]);
@@ -185,7 +223,6 @@ export default function Consultations() {
     });
   }
 
-  // Histórico completo do paciente do form aberto — reforça continuidade ao criar/editar
   const previousForPatient = useMemo(() => {
     if (!form.patient_id) return [];
     return consultations
@@ -194,7 +231,6 @@ export default function Consultations() {
       .sort((a, b) => b.consultation_date.localeCompare(a.consultation_date));
   }, [consultations, form.patient_id, editing]);
 
-  // Histórico completo do paciente do registro em detalhe (ordem cronológica crescente)
   const historyForDetail = useMemo(() => {
     if (!detailRecord) return [];
     return consultations
@@ -217,7 +253,16 @@ export default function Consultations() {
   function openNew() {
     setEditing(null);
     setShowHistoryInForm(false);
-    setForm({ ...emptyForm, consultation_date: new Date().toISOString().slice(0, 10) });
+    setForm({ 
+      ...emptyForm, 
+      consultation_date: new Date().toISOString().slice(0, 10),
+      // 🔥 GARANTE que o formulário começa vazio
+      clinical_conditions: '',
+      medication: '',
+      notes: '',
+      psych_notes: '',
+      recommendations: '',
+    });
     setModalOpen(true);
   }
 
@@ -232,6 +277,9 @@ export default function Consultations() {
       consultation_date: new Date().toISOString().slice(0, 10),
       clinical_conditions: prev?.clinical_conditions || '',
       medication: prev?.medication || '',
+      notes: '',
+      psych_notes: '',
+      recommendations: '',
     });
     setModalOpen(true);
   }
@@ -241,8 +289,8 @@ export default function Consultations() {
     setForm((f) => ({
       ...f,
       patient_id: patientId,
-      clinical_conditions: prev?.clinical_conditions || f.clinical_conditions,
-      medication: prev?.medication || f.medication,
+      clinical_conditions: prev?.clinical_conditions || '',
+      medication: prev?.medication || '',
     }));
   }
 
@@ -264,8 +312,16 @@ export default function Consultations() {
     setModalOpen(true);
   }
 
+  // 🔥 CORREÇÃO: Função save com validação adequada
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    
+    // 🔥 VALIDAÇÃO: Verifica se o paciente foi selecionado
+    if (!form.patient_id) {
+      alert('Por favor, selecione um paciente antes de salvar.');
+      return;
+    }
+
     setSaving(true);
     const payload = {
       patient_id: form.patient_id,
@@ -278,14 +334,21 @@ export default function Consultations() {
       recommendations: form.recommendations || null,
       next_consultation_date: form.next_consultation_date || null,
     };
-    if (editing) {
-      await supabase.from('consultations').update(payload).eq('id', editing.id);
-    } else {
-      await supabase.from('consultations').insert(payload);
+    
+    try {
+      if (editing) {
+        await supabase.from('consultations').update(payload).eq('id', editing.id);
+      } else {
+        await supabase.from('consultations').insert(payload);
+      }
+      setSaving(false);
+      setModalOpen(false);
+      await load();
+    } catch (error) {
+      console.error('Erro ao salvar consulta:', error);
+      alert('Erro ao salvar a consulta. Tente novamente.');
+      setSaving(false);
     }
-    setSaving(false);
-    setModalOpen(false);
-    load();
   }
 
   async function remove(id: string) {
@@ -539,7 +602,7 @@ export default function Consultations() {
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-[#4F4E3A] truncate">{c.patient?.name}</p>
                             <p className="text-xs text-[#8C8B6E] flex items-center gap-1.5 flex-wrap mt-0.5">
-                              <span>{new Date(c.consultation_date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span>
+                              <span>{fmtShortDate(c.consultation_date)}</span>
                               {c.appointment?.session_number && <span>· Sessão {c.appointment.session_number}</span>}
                               {c.patient?.doctor?.name && (
                                 <span className="inline-flex items-center gap-1 text-[#6B8E5A]">
@@ -570,7 +633,7 @@ export default function Consultations() {
         </div>
       )}
 
-      {/* Modal de detalhe (clique na lista) */}
+      {/* Modal de detalhe */}
       {detailRecord && (
         <ConsultationDetailModal
           record={detailRecord}
@@ -612,7 +675,7 @@ export default function Consultations() {
                 </div>
               </div>
 
-              {/* Acesso rápido à anamnese do paciente */}
+              {/* Acesso à anamnese */}
               {form.patient_id && (() => {
                 const patient = patients.find((p) => p.id === form.patient_id);
                 return patient ? (
@@ -622,7 +685,7 @@ export default function Consultations() {
                 ) : null;
               })()}
 
-              {/* Histórico anterior do paciente — visão unificada, evita registro "solto" */}
+              {/* Histórico anterior */}
               {form.patient_id && previousForPatient.length > 0 && (
                 <div className="rounded-xl border border-[#E0D9C3] bg-[#F5F2E8] px-4 py-3">
                   <button
@@ -760,7 +823,7 @@ function ConsultationDetailModal({
             <p className="text-sm text-[#8C8B6E] italic">Nenhuma anotação registrada nesta sessão.</p>
           )}
 
-          {/* Acesso à anamnese do paciente */}
+          {/* Acesso à anamnese */}
           {record.patient_id && record.patient?.name && (
             <AnamneseViewer patientId={record.patient_id} patientName={record.patient.name} trigger="button" />
           )}
