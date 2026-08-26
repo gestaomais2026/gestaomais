@@ -5,8 +5,7 @@ import {
   DollarSign, AlertCircle, CheckCircle2, CreditCard,
 } from 'lucide-react';
 
-// ---------- Tipos locais (ver supabase-types-additions.ts para somar ao lib/supabase.ts) ----------
-
+// ---------- Tipos locais ----------
 type FollowUpType = 'unico' | '1_mes' | '2_meses' | '3_meses';
 type PaymentMode = 'unico' | 'por_sessao';
 type ChargeMethod = 'pix' | 'link de pagamento' | 'outro';
@@ -41,8 +40,6 @@ type ChargeContext =
   | { kind: 'return'; plan: TreatmentPlan; sessionNumber: number; appointment: AppointmentRow }
   | { kind: 'avulsa'; appointment: AppointmentRow };
 
-// Suposição de negócio: "X meses" = 1ª consulta + X retornos mensais.
-// Ajuste este mapa se a contagem de sessões por pacote for diferente.
 const FOLLOW_UP_SESSIONS: Record<FollowUpType, number> = {
   unico: 1,
   '1_mes': 2,
@@ -89,10 +86,11 @@ export default function Appointments() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    // 🔥 ORDENAÇÃO: data mais recente primeiro (ordem decrescente)
     const { data } = await supabase
       .from('appointments')
       .select('*, patient:patients(*, doctor:doctors(*))')
-      .order('scheduled_at', { ascending: true });
+      .order('scheduled_at', { ascending: false }); // <-- ALTERADO PARA false
     setAppointments((data as AppointmentRow[]) || []);
     const { data: pData } = await supabase.from('patients').select('*, doctor:doctors(*)').order('name');
     setPatients((pData as PatientRow[]) || []);
@@ -359,11 +357,20 @@ export default function Appointments() {
     completed: 'bg-blue-100 text-blue-700', cancelled: 'bg-red-100 text-red-700', no_show: 'bg-gray-100 text-gray-600',
   };
 
+  // 🔥 AGRUPAMENTO: mantém a ordem decrescente (mais recentes primeiro)
   const grouped = appointments.reduce<Record<string, AppointmentRow[]>>((acc, apt) => {
     const date = new Date(apt.scheduled_at).toDateString();
-    (acc[date] ||= []).push(apt);
+    if (!acc[date]) {
+      acc[date] = [];
+    }
+    acc[date].push(apt);
     return acc;
   }, {});
+
+  // 🔥 ORDENAÇÃO DAS DATAS: mais recentes primeiro
+  const sortedDates = Object.keys(grouped).sort((a, b) => {
+    return new Date(b).getTime() - new Date(a).getTime();
+  });
 
   return (
     <div className="space-y-6">
@@ -385,7 +392,9 @@ export default function Appointments() {
         </div>
       ) : (
         <div className="space-y-6">
-          {Object.entries(grouped).map(([dateStr, apts]) => {
+          {/* 🔥 ITERA SOBRE AS DATAS ORDENADAS (mais recentes primeiro) */}
+          {sortedDates.map((dateStr) => {
+            const apts = grouped[dateStr];
             const date = new Date(dateStr);
             const isToday = date.toDateString() === new Date().toDateString();
             return (
