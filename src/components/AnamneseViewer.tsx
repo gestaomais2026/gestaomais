@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { supabase, Anamnese } from '@/lib/supabase';
-import { X, FileText, Loader2, ClipboardList } from 'lucide-react';
+import { supabase, Anamnese, Doctor } from '@/lib/supabase';
+import { X, FileText, Loader2, ClipboardList, Stethoscope } from 'lucide-react';
 
 export default function AnamneseViewer({ patientId, patientName, trigger }: {
   patientId: string;
@@ -9,6 +9,7 @@ export default function AnamneseViewer({ patientId, patientName, trigger }: {
 }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<Anamnese | null>(null);
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function load() {
@@ -16,12 +17,14 @@ export default function AnamneseViewer({ patientId, patientName, trigger }: {
     setLoading(true);
     const { data: rows } = await supabase
       .from('anamnese')
-      .select('*')
+      .select('*, medico_indicador:doctors(*)')
       .eq('patient_id', patientId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    setData(rows as Anamnese | null);
+    const anamnese = rows as (Anamnese & { medico_indicador?: Doctor }) | null;
+    setData(anamnese);
+    setDoctor(anamnese?.medico_indicador ?? null);
     setLoading(false);
   }
 
@@ -78,6 +81,15 @@ export default function AnamneseViewer({ patientId, patientName, trigger }: {
               </div>
             ) : (
               <>
+                {doctor && (
+                  <div className="flex items-center gap-2 text-sm text-[#4F4E3A] bg-gradient-to-r from-[#6B8E5A]/10 to-[#4F6B3E]/10 rounded-lg px-3 py-2">
+                    <Stethoscope size={14} className="text-[#6B8E5A]" />
+                    <span className="font-medium">Indicado por: {doctor.name}</span>
+                    {doctor.specialty && <span className="text-[#8C8B6E] text-xs">· {doctor.specialty}</span>}
+                    {doctor.crm && <span className="text-[#8C8B6E] text-xs">· CRM: {doctor.crm}</span>}
+                  </div>
+                )}
+
                 <Group title="Motivo e Histórico">
                   <Item label="Motivo da consulta" value={data.motivo_consulta} />
                   <Item label="Acompanhamento anterior com nutricionista" value={data.acompanhamento_anterior} />

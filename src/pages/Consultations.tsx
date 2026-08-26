@@ -1,9 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase, Patient, Doctor } from '@/lib/supabase';
-import {
-  Plus, Edit2, Trash2, X, ClipboardList, Stethoscope, Clock, FileDown, Pill,
-  ChevronDown, ChevronRight, History,
-} from 'lucide-react';
+import AnamneseViewer from '@/components/AnamneseViewer';
+import { Plus, CreditCard as Edit2, Trash2, X, ClipboardList, Stethoscope, Clock, FileDown, Pill, ChevronDown, ChevronRight, History, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 
 // npm install jspdf
@@ -614,6 +612,16 @@ export default function Consultations() {
                 </div>
               </div>
 
+              {/* Acesso rápido à anamnese do paciente */}
+              {form.patient_id && (() => {
+                const patient = patients.find((p) => p.id === form.patient_id);
+                return patient ? (
+                  <div className="flex items-center gap-2">
+                    <AnamneseViewer patientId={patient.id} patientName={patient.name} trigger="button" />
+                  </div>
+                ) : null;
+              })()}
+
               {/* Histórico anterior do paciente — visão unificada, evita registro "solto" */}
               {form.patient_id && previousForPatient.length > 0 && (
                 <div className="rounded-xl border border-[#E0D9C3] bg-[#F5F2E8] px-4 py-3">
@@ -750,6 +758,11 @@ function ConsultationDetailModal({
           )}
           {!hasAnyNote && (
             <p className="text-sm text-[#8C8B6E] italic">Nenhuma anotação registrada nesta sessão.</p>
+          )}
+
+          {/* Acesso à anamnese do paciente */}
+          {record.patient_id && record.patient?.name && (
+            <AnamneseViewer patientId={record.patient_id} patientName={record.patient.name} trigger="button" />
           )}
 
           {history.length > 1 && (

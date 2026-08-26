@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase, Patient, Doctor } from '@/lib/supabase';
 import AnamneseViewer from '@/components/AnamneseViewer';
-import { Search, Plus, Edit2, Trash2, Phone, Mail, X, UserPlus, Stethoscope, ClipboardList } from 'lucide-react';
+import { Search, Plus, CreditCard as Edit2, Trash2, Phone, Mail, X, UserPlus, Stethoscope, ClipboardList } from 'lucide-react';
 
 const emptyForm: Partial<Patient> = {
   name: '', email: '', phone: '', birth_date: '', gender: 'female',
@@ -61,6 +61,7 @@ export default function Patients() {
       medications: form.medications || null,
       status: form.status || 'active',
       doctor_id: form.doctor_id || null,
+      profession: form.profession || null,
     };
 
     if (editing) {
@@ -199,11 +200,9 @@ export default function Patients() {
                   )}
                 </div>
 
-                {p.from_anamnese && (
-                  <div className="mb-3">
-                    <AnamneseViewer patientId={p.id} patientName={p.name} trigger="badge" />
-                  </div>
-                )}
+                <div className="mb-3">
+                  <AnamneseViewer patientId={p.id} patientName={p.name} trigger="badge" />
+                </div>
 
                 <div className="flex gap-2 pt-3 border-t border-[#E0D9C3]">
                   <button
@@ -281,6 +280,11 @@ export default function Patients() {
                     className={inputClass} />
                 </Field>
               </div>
+
+              <Field label="Profissão">
+                <input value={form.profession || ''} onChange={(e) => setForm({ ...form, profession: e.target.value })}
+                  className={inputClass} />
+              </Field>
 
               <Field label="Médico referente (indicação)">
                 <select value={form.doctor_id || ''} onChange={(e) => setForm({ ...form, doctor_id: e.target.value || null })}
