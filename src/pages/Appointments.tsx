@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase, Appointment, Patient, Doctor } from '@/lib/supabase';
 import {
   Plus, Edit2, Trash2, X, Calendar as CalIcon, Clock, Stethoscope,
-  DollarSign, AlertCircle, CheckCircle2, CreditCard,
+  DollarSign, AlertCircle, CheckCircle2, CreditCard, Search,
 } from 'lucide-react';
 
 // ---------- Tipos locais (ver supabase-types-additions.ts para somar ao lib/supabase.ts) ----------
@@ -82,6 +82,10 @@ export default function Appointments() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  // Estado para busca de paciente
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   const [activePlan, setActivePlan] = useState<TreatmentPlan | null>(null);
   const [checkingPlan, setCheckingPlan] = useState(false);
 
@@ -132,6 +136,7 @@ export default function Appointments() {
   function openNew() {
     setEditing(null);
     setActivePlan(null);
+    setSearchTerm('');
     setForm({ ...emptyForm, scheduled_at: new Date(Date.now() + 86400000).toISOString().slice(0, 16) });
     setModalOpen(true);
   }
@@ -139,6 +144,8 @@ export default function Appointments() {
   function openEdit(a: AppointmentRow) {
     setEditing(a);
     setActivePlan(null);
+    const patientName = patients.find(p => p.id === a.patient_id)?.name || '';
+    setSearchTerm(patientName);
     setForm({
       patient_id: a.patient_id,
       doctor_id: a.patient?.doctor?.id || '',
@@ -154,8 +161,17 @@ export default function Appointments() {
 
   function onSelectPatient(id: string) {
     const p = patients.find((x) => x.id === id);
-    setForm((f) => ({ ...f, patient_id: id, doctor_id: p?.doctor?.id || '' }));
+    if (p) {
+      setSearchTerm(p.name);
+      setForm((f) => ({ ...f, patient_id: id, doctor_id: p?.doctor?.id || '' }));
+    }
+    setShowSuggestions(false);
   }
+
+  // Filtra pacientes baseado no termo de busca
+  const filteredPatients = patients.filter(p => 
+    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   async function syncPatientDoctor(patientId: string, doctorId: string) {
     const patient = patients.find((p) => p.id === patientId);
@@ -463,18 +479,81 @@ export default function Appointments() {
               <h2 className="text-xl font-serif font-bold text-[#4F4E3A]">
                 {editing ? 'Editar Agendamento' : 'Novo Agendamento'}
               </h2>
-              <button onClick={() => setModalOpen(false)} className="text-[#8C8B6E] hover:text-[#4F4E3A]">
+              <button onClick={() => {
+                setModalOpen(false);
+                setShowSuggestions(false);
+              }} className="text-[#8C8B6E] hover:text-[#4F4E3A]">
                 <X size={24} />
               </button>
             </div>
             <form onSubmit={save} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-[#4F4E3A] mb-1.5">Paciente *</label>
-                <select required value={form.patient_id} onChange={(e) => onSelectPatient(e.target.value)}
-                  className={inputClass}>
-                  <option value="">Selecione...</option>
-                  {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8C8B6E]">
+                    <Search size={18} />
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setShowSuggestions(true);
+                      // Limpa o patient_id se o usuário digitar algo diferente
+                      if (form.patient_id) {
+                        const found = patients.find(p => p.id === form.patient_id);
+                        if (found && found.name.toLowerCase() !== e.target.value.toLowerCase()) {
+                          setForm({ ...form, patient_id: '', doctor_id: '' });
+                        }
+                      }
+                    }}
+                    onFocus={() => {
+                      if (searchTerm) {
+                        setShowSuggestions(true);
+                      }
+                    }}
+                    onBlur={() => {
+                      // Delay para permitir clique na sugestão
+                      setTimeout(() => setShowSuggestions(false), 200);
+                    }}
+                    placeholder="Digite o nome do paciente..."
+                    className={`${inputClass} pl-10`}
+                  />
+                  
+                  {showSuggestions && searchTerm && filteredPatients.length > 0 && (
+                    <div className="absolute z-20 w-full mt-1 bg-white rounded-xl border border-[#D5CFBE] shadow-lg max-h-48 overflow-y-auto">
+                      {filteredPatients.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className="w-full px-4 py-2.5 text-left text-sm text-[#4F4E3A] hover:bg-[#F5F2E8] transition-colors flex items-center justify-between border-b border-[#F5F2E8] last:border-0"
+                          onClick={() => {
+                            setSearchTerm(p.name);
+                            setForm({ 
+                              ...form, 
+                              patient_id: p.id, 
+                              doctor_id: p.doctor?.id || '' 
+                            });
+                            setShowSuggestions(false);
+                          }}
+                        >
+                          <span>{p.name}</span>
+                          {p.doctor?.name && (
+                            <span className="text-xs text-[#8C8B6E]">
+                              Médico: {p.doctor.name}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {form.patient_id && (
+                  <p className="text-xs text-[#6B8E5A] mt-1">
+                    ✓ Paciente selecionado: {searchTerm}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -575,11 +654,14 @@ export default function Appointments() {
                   onChange={(e) => setForm({ ...form, notes: e.target.value })} className={inputClass} />
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setModalOpen(false)}
+                <button type="button" onClick={() => {
+                  setModalOpen(false);
+                  setShowSuggestions(false);
+                }}
                   className="flex-1 py-3 rounded-xl bg-[#F5F2E8] text-[#4F4E3A] font-medium hover:bg-[#EDE8D9] transition-colors">
                   Cancelar
                 </button>
-                <button type="submit" disabled={saving}
+                <button type="submit" disabled={saving || !form.patient_id}
                   className="flex-1 py-3 rounded-xl bg-[#4F4E3A] text-white font-medium hover:bg-[#3D3C2A] transition-colors disabled:opacity-60">
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
